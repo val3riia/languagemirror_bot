@@ -540,6 +540,18 @@ wheels = [
 ]
 
 [[package]]
+name = "pytelegrambotapi"
+version = "4.26.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "requests" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/1d/83/fb889f80a072199bf98f621a514488c423c56a79b8041c9d860867d18b60/pytelegrambotapi-4.26.0.tar.gz", hash = "sha256:ba92f6a83bf991cbf189577dbc314976032ad8a3fbe6cd631d0ccd79db8523f9", size = 1338623 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/34/e1/b0d4248f395a19d76a46d1c0950354771c1176b9f27dc30849360363991a/pytelegrambotapi-4.26.0-py3-none-any.whl", hash = "sha256:6a7a10571dcecc01aac917269baf4321a0518d5db1fe57b6a09b76cab2bd6b91", size = 270483 },
+]
+
+[[package]]
 name = "python-telegram-bot"
 version = "22.0"
 source = { registry = "https://pypi.org/simple" }
@@ -563,6 +575,7 @@ dependencies = [
     { name = "httpx" },
     { name = "openai" },
     { name = "psycopg2-binary" },
+    { name = "pytelegrambotapi" },
     { name = "python-telegram-bot" },
     { name = "requests" },
     { name = "telegram" },
@@ -578,6 +591,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "openai", specifier = ">=1.76.0" },
     { name = "psycopg2-binary", specifier = ">=2.9.10" },
+    { name = "pytelegrambotapi", specifier = ">=4.26.0" },
     { name = "python-telegram-bot", specifier = ">=22.0" },
     { name = "requests", specifier = ">=2.32.3" },
     { name = "telegram", specifier = ">=0.0.1" },

@@ -11,6 +11,7 @@ dependencies = [
     "httpx>=0.28.1",
     "openai>=1.76.0",
     "psycopg2-binary>=2.9.10",
+    "pytelegrambotapi>=4.26.0",
     "python-telegram-bot>=22.0",
     "requests>=2.32.3",
     "telegram>=0.0.1",

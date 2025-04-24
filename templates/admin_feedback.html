@@ -64,20 +64,9 @@
                             </tr>
                         </thead>
                         <tbody id="feedbackTableBody">
-                            {% if feedback %}
-                                {% for item in feedback %}
-                                <tr>
-                                    <td>{{ item.user_id }}</td>
-                                    <td>{{ item.rating }}</td>
-                                    <td>{{ item.comment }}</td>
-                                    <td>{{ item.timestamp }}</td>
-                                </tr>
-                                {% endfor %}
-                            {% else %}
-                                <tr>
-                                    <td colspan="4" class="text-center">No feedback data available</td>
-                                </tr>
-                            {% endif %}
+                            <tr>
+                                <td colspan="4" class="text-center">Loading feedback data...</td>
+                            </tr>
                         </tbody>
                     </table>
                 </div>
@@ -87,8 +76,8 @@
 
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Initial counts
-            updateStats();
+            // Initial data load
+            fetchFeedback();
             
             // Refresh button
             document.getElementById('refreshButton').addEventListener('click', function() {
@@ -131,25 +120,30 @@
             
             // Update statistics
             function updateStats() {
-                const feedback = {{ feedback|tojson }};
-                
-                let helpfulCount = 0;
-                let okayCount = 0;
-                let notHelpfulCount = 0;
-                
-                feedback.forEach(item => {
-                    if (item.rating === '👍 Helpful') {
-                        helpfulCount++;
-                    } else if (item.rating === '🤔 Okay') {
-                        okayCount++;
-                    } else if (item.rating === '👎 Not helpful') {
-                        notHelpfulCount++;
-                    }
-                });
-                
-                document.getElementById('helpfulCount').textContent = helpfulCount;
-                document.getElementById('okayCount').textContent = okayCount;
-                document.getElementById('notHelpfulCount').textContent = notHelpfulCount;
+                fetch('/api/feedback')
+                    .then(response => response.json())
+                    .then(feedback => {
+                        let helpfulCount = 0;
+                        let okayCount = 0;
+                        let notHelpfulCount = 0;
+                        
+                        feedback.forEach(item => {
+                            if (item.rating === 'helpful') {
+                                helpfulCount++;
+                            } else if (item.rating === 'okay') {
+                                okayCount++;
+                            } else if (item.rating === 'not_helpful') {
+                                notHelpfulCount++;
+                            }
+                        });
+                        
+                        document.getElementById('helpfulCount').textContent = helpfulCount;
+                        document.getElementById('okayCount').textContent = okayCount;
+                        document.getElementById('notHelpfulCount').textContent = notHelpfulCount;
+                    })
+                    .catch(error => {
+                        console.error('Error updating stats:', error);
+                    });
             }
         });
     </script>
