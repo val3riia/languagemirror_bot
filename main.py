@@ -13,10 +13,40 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Import models
+from models import db, User, Session, Message, Feedback
+
 # Create Flask app
 app = Flask(__name__)
 
-# Store feedback data in memory
+# Configure database
+database_url = os.environ.get("DATABASE_URL")
+if database_url:
+    # Fix potential postgres:// vs postgresql:// URLs
+    if database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
+        
+    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+        "pool_recycle": 300,
+        "pool_pre_ping": True,
+    }
+    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    
+    # Initialize database with app
+    db.init_app(app)
+    
+    # Create database tables
+    with app.app_context():
+        try:
+            db.create_all()
+            logger.info("Database tables created successfully")
+        except Exception as e:
+            logger.error(f"Error creating database tables: {e}")
+else:
+    logger.error("DATABASE_URL environment variable not set")
+
+# Temporary storage for feedback data (for backward compatibility)
 feedback_data = []
 
 # Start bot in separate thread
@@ -51,7 +81,34 @@ def admin_feedback():
 @app.route('/api/feedback', methods=['GET'])
 def get_feedback():
     """API endpoint to get feedback data"""
-    return jsonify(feedback_data)
+    # Если база данных не настроена, используем данные из памяти
+    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
+        return jsonify(feedback_data)
+    
+    try:
+        # Получаем данные из базы данных
+        feedback_items = Feedback.query.order_by(Feedback.timestamp.desc()).all()
+        result = []
+        
+        for item in feedback_items:
+            # Находим пользователя
+            user = User.query.get(item.user_id)
+            username = user.username if user else "unknown"
+            
+            result.append({
+                "id": item.id,
+                "user_id": user.telegram_id if user else "unknown",
+                "username": username,
+                "rating": item.rating,
+                "comment": item.comment or "",
+                "timestamp": item.timestamp.isoformat()
+            })
+        
+        return jsonify(result)
+    except Exception as e:
+        logger.error(f"Error getting feedback: {e}")
+        # В случае ошибки базы данных, возвращаем данные из памяти
+        return jsonify(feedback_data)
 
 @app.route('/api/feedback', methods=['POST'])
 def add_feedback():
@@ -60,17 +117,50 @@ def add_feedback():
     if not data:
         return jsonify({"error": "No data provided"}), 400
     
-    feedback_item = {
-        "id": len(feedback_data) + 1,
-        "user_id": data.get("user_id", "unknown"),
-        "username": data.get("username", "unknown"),
-        "rating": data.get("rating", "unknown"),
-        "comment": data.get("comment", ""),
-        "timestamp": datetime.now().isoformat()
-    }
-    
-    feedback_data.append(feedback_item)
-    return jsonify({"success": True, "id": feedback_item["id"]}), 201
+    try:
+        # Если база данных настроена, сохраняем в неё
+        if app.config.get("SQLALCHEMY_DATABASE_URI"):
+            # Пробуем найти пользователя по telegram_id
+            telegram_id = int(data.get("user_id", 0))
+            user = User.query.filter_by(telegram_id=telegram_id).first()
+            
+            # Если пользователь не найден, создаем его
+            if not user:
+                user = User(
+                    telegram_id=telegram_id,
+                    username=data.get("username", "unknown")
+                )
+                db.session.add(user)
+                db.session.commit()
+            
+            # Создаем запись обратной связи
+            feedback = Feedback(
+                user_id=user.id,
+                rating=data.get("rating", "unknown"),
+                comment=data.get("comment", "")
+            )
+            
+            db.session.add(feedback)
+            db.session.commit()
+            
+            return jsonify({"success": True, "id": feedback.id}), 201
+        
+        # Если база данных не настроена, сохраняем в памяти
+        feedback_item = {
+            "id": len(feedback_data) + 1,
+            "user_id": data.get("user_id", "unknown"),
+            "username": data.get("username", "unknown"),
+            "rating": data.get("rating", "unknown"),
+            "comment": data.get("comment", ""),
+            "timestamp": datetime.now().isoformat()
+        }
+        
+        feedback_data.append(feedback_item)
+        return jsonify({"success": True, "id": feedback_item["id"]}), 201
+        
+    except Exception as e:
+        logger.error(f"Error adding feedback: {e}")
+        return jsonify({"error": str(e)}), 500
 
 @app.errorhandler(404)
 def page_not_found(e):
