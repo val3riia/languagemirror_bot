@@ -52,8 +52,38 @@ LANGUAGE_LEVELS = {
     "C2": "Proficiency - You can understand virtually everything heard or read"
 }
 
-# Простое хранилище сессий в памяти
-user_sessions = {}
+# Импортируем менеджер сессий с поддержкой базы данных
+try:
+    from db_session_manager import DatabaseSessionManager
+    from flask import Flask
+    import os
+    
+    # Пробуем использовать базу данных, если доступна
+    if os.environ.get("DATABASE_URL"):
+        # Создаем Flask приложение для инициализации БД
+        app = Flask(__name__)
+        database_url = os.environ.get("DATABASE_URL")
+        if database_url.startswith("postgres://"):
+            database_url = database_url.replace("postgres://", "postgresql://", 1)
+        
+        app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+            "pool_recycle": 300, "pool_pre_ping": True,
+        }
+        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+        
+        # Используем сессии с базой данных
+        session_manager = DatabaseSessionManager(app)
+        logger.info("Используется менеджер сессий с базой данных")
+    else:
+        # Используем in-memory сессии
+        session_manager = DatabaseSessionManager()
+        logger.warning("База данных недоступна. Используются сессии в памяти")
+        
+except ImportError:
+    logger.warning("Модуль db_session_manager не найден. Используются сессии в памяти")
+    # Простое хранилище сессий в памяти (для обратной совместимости)
+    user_sessions = {}
 
 # Примеры тем для обсуждения разного уровня
 CONVERSATION_TOPICS = {
@@ -158,14 +188,26 @@ def handle_discussion(message):
     """Обрабатывает команду /discussion."""
     user_id = message.from_user.id
     
-    # Проверяем, есть ли у пользователя активная сессия
-    if user_id in user_sessions:
-        bot.send_message(
-            message.chat.id,
-            "You're already in a discussion with me. You can continue talking or "
-            "use /stop_discussion to end our current conversation."
-        )
-        return
+    # Определяем, какую систему хранения сессий использовать
+    if 'session_manager' in globals():
+        # Проверяем, есть ли у пользователя активная сессия через менеджер
+        session = session_manager.get_session(user_id)
+        if session:
+            bot.send_message(
+                message.chat.id,
+                "You're already in a discussion with me. You can continue talking or "
+                "use /stop_discussion to end our current conversation."
+            )
+            return
+    else:
+        # Используем старую систему хранения в памяти
+        if user_id in user_sessions:
+            bot.send_message(
+                message.chat.id,
+                "You're already in a discussion with me. You can continue talking or "
+                "use /stop_discussion to end our current conversation."
+            )
+            return
     
     # Создаем клавиатуру для выбора уровня языка
     markup = types.InlineKeyboardMarkup()
@@ -189,12 +231,25 @@ def handle_language_level(call):
     level = call.data.split('_')[1]
     user_id = call.from_user.id
     
-    # Инициализируем сессию пользователя
-    user_sessions[user_id] = {
+    # Получаем дополнительную информацию о пользователе
+    user_info = {
         "language_level": level,
-        "messages": [],
-        "last_active": time.time()
+        "username": call.from_user.username,
+        "first_name": call.from_user.first_name,
+        "last_name": call.from_user.last_name
     }
+    
+    # Инициализируем сессию пользователя
+    if 'session_manager' in globals():
+        # Используем менеджер сессий с поддержкой БД
+        session_manager.create_session(user_id, user_info)
+    else:
+        # Используем старую систему хранения в памяти
+        user_sessions[user_id] = {
+            "language_level": level,
+            "messages": [],
+            "last_active": time.time()
+        }
     
     # Предлагаем тему на основе уровня
     topics = CONVERSATION_TOPICS.get(level, CONVERSATION_TOPICS["B1"])
@@ -214,7 +269,16 @@ def handle_stop_discussion(message):
     user_id = message.from_user.id
     
     # Проверяем, есть ли у пользователя активная сессия
-    if user_id not in user_sessions:
+    session_exists = False
+    
+    if 'session_manager' in globals():
+        session = session_manager.get_session(user_id)
+        if session:
+            session_exists = True
+    elif user_id in user_sessions:
+        session_exists = True
+    
+    if not session_exists:
         bot.send_message(
             message.chat.id,
             "You don't have an active discussion session. "
@@ -250,7 +314,7 @@ def handle_feedback(call):
         "not_helpful": "👎 Not helpful"
     }
     
-    # Сохраняем обратную связь (в реальном приложении сохранялось бы в базу данных)
+    # Сохраняем обратную связь в лог
     logger.info(f"User {user_id} gave feedback: {rating_map.get(feedback_type)}")
     
     # Запрашиваем дополнительный комментарий
@@ -263,17 +327,31 @@ def handle_feedback(call):
     )
     
     # Сохраняем тип обратной связи во временном хранилище для следующего обработчика
-    # В telebot нет user_data как в python-telegram-bot, поэтому добавляем к сессии
-    user_sessions[user_id]["feedback_type"] = feedback_type
+    if 'session_manager' in globals():
+        # Завершаем сессию в базе данных, но сохраняем информацию о feedback
+        session = session_manager.get_session(user_id)
+        if session:
+            session_manager.end_session(user_id)
+        
+        # Создаем временную сессию только для хранения типа обратной связи
+        session_manager.create_session(user_id, {"feedback_type": feedback_type})
+    else:
+        # В telebot нет user_data как в python-telegram-bot, поэтому используем сессии
+        if user_id in user_sessions:
+            user_sessions[user_id]["feedback_type"] = feedback_type
+            # Очищаем сессию (сохраняем только feedback_type)
+            user_sessions[user_id] = {
+                "feedback_type": feedback_type,
+                "last_active": time.time()
+            }
+        else:
+            user_sessions[user_id] = {
+                "feedback_type": feedback_type,
+                "last_active": time.time()
+            }
     
     # Устанавливаем следующий шаг - ожидание комментария
     bot.register_next_step_handler(call.message, handle_feedback_comment)
-    
-    # Очищаем сессию (сохраняем только feedback_type)
-    user_sessions[user_id] = {
-        "feedback_type": feedback_type,
-        "last_active": time.time()
-    }
 
 def handle_feedback_comment(message):
     """Обрабатывает комментарии к обратной связи."""
@@ -285,11 +363,23 @@ def handle_feedback_comment(message):
             message.chat.id,
             "Thanks again for your feedback! Use /discussion anytime you want to practice English."
         )
+        
+        # Завершаем сессию
+        if 'session_manager' in globals():
+            session_manager.end_session(user_id)
+        elif user_id in user_sessions:
+            del user_sessions[user_id]
+            
         return
     
     # Получаем тип обратной связи из временного хранилища
     feedback_type = "unknown"
-    if user_id in user_sessions and "feedback_type" in user_sessions[user_id]:
+    
+    if 'session_manager' in globals():
+        session = session_manager.get_session(user_id)
+        if session and "feedback_type" in session:
+            feedback_type = session["feedback_type"]
+    elif user_id in user_sessions and "feedback_type" in user_sessions[user_id]:
         feedback_type = user_sessions[user_id]["feedback_type"]
     
     rating_map = {
@@ -299,7 +389,25 @@ def handle_feedback_comment(message):
         "unknown": "Rating not provided"
     }
     
-    # Сохраняем обратную связь с комментарием (в реальном приложении сохранялось бы в базу данных)
+    # Сохраняем обратную связь в базу данных, если доступна
+    try:
+        # Пытаемся отправить HTTP запрос для сохранения обратной связи в БД
+        feedback_data = {
+            "user_id": user_id,
+            "username": message.from_user.username or f"user_{user_id}",
+            "rating": feedback_type,
+            "comment": comment
+        }
+        
+        # Используем requests.post в отдельном потоке, чтобы не блокировать бота
+        threading.Thread(
+            target=lambda: requests.post("http://localhost:5000/api/feedback", json=feedback_data),
+            daemon=True
+        ).start()
+    except Exception as e:
+        logger.error(f"Error saving feedback to database: {e}")
+    
+    # В любом случае логируем обратную связь
     logger.info(f"User {user_id} feedback {rating_map.get(feedback_type)} with comment: {comment}")
     
     bot.send_message(
@@ -309,7 +417,9 @@ def handle_feedback_comment(message):
     )
     
     # Очищаем данные обратной связи из временного хранилища
-    if user_id in user_sessions:
+    if 'session_manager' in globals():
+        session_manager.end_session(user_id)
+    elif user_id in user_sessions:
         del user_sessions[user_id]
 
 def generate_learning_response(user_message: str, language_level: str) -> str:
@@ -362,31 +472,49 @@ def handle_all_messages(message):
     user_message = message.text
     
     # Проверяем, есть ли у пользователя активная сессия
-    if user_id not in user_sessions or "language_level" not in user_sessions[user_id]:
+    session_exists = False
+    language_level = "B1"  # Значение по умолчанию
+    
+    if 'session_manager' in globals():
+        # Проверка через менеджер сессий с БД
+        session = session_manager.get_session(user_id)
+        if session and "language_level" in session:
+            session_exists = True
+            language_level = session.get("language_level", "B1")
+    elif user_id in user_sessions and "language_level" in user_sessions[user_id]:
+        # Проверка через старую систему хранения в памяти
+        session_exists = True
+        language_level = user_sessions[user_id].get("language_level", "B1")
+    
+    if not session_exists:
         bot.send_message(
             message.chat.id,
             "Please use /discussion to start a conversation with me first."
         )
         return
     
-    # Обновляем сессию новым сообщением
-    if "messages" not in user_sessions[user_id]:
-        user_sessions[user_id]["messages"] = []
-    user_sessions[user_id]["messages"].append({"role": "user", "content": user_message})
-    user_sessions[user_id]["last_active"] = time.time()
-    
-    # Получаем уровень языка из сессии
-    language_level = user_sessions[user_id].get("language_level", "B1")
-    
     # Имитируем "печатание" бота
     bot.send_chat_action(message.chat.id, 'typing')
     time.sleep(1.5)  # Имитация времени обдумывания
     
+    # Добавляем сообщение пользователя в сессию
+    if 'session_manager' in globals():
+        session_manager.add_message_to_session(user_id, "user", user_message)
+    else:
+        # Используем старую систему хранения в памяти
+        if "messages" not in user_sessions[user_id]:
+            user_sessions[user_id]["messages"] = []
+        user_sessions[user_id]["messages"].append({"role": "user", "content": user_message})
+        user_sessions[user_id]["last_active"] = time.time()
+    
     # Генерируем ответ на основе сообщения пользователя
     response = generate_learning_response(user_message, language_level)
     
-    # Сохраняем ответ в сессии
-    user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
+    # Сохраняем ответ бота в сессии
+    if 'session_manager' in globals():
+        session_manager.add_message_to_session(user_id, "assistant", response)
+    else:
+        user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
     
     # Отправляем ответ пользователю
     bot.send_message(message.chat.id, response)
