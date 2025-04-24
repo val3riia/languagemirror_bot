@@ -653,6 +653,24 @@ def handle_all_messages(message):
 @bot.message_handler(commands=['help'])
 def handle_help(message):
     """Обрабатывает команду /help."""
+    # Отправляем клавиатуру
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
+    start_button = types.KeyboardButton('/discussion')
+    stop_button = types.KeyboardButton('/stop_discussion')
+    back_button = types.KeyboardButton('/start')
+    markup.add(start_button, stop_button, back_button)
+    
+    # Проверяем, является ли пользователь администратором, чтобы добавить кнопку админа
+    is_admin = False
+    user_id = message.from_user.id
+    username = message.from_user.username if hasattr(message.from_user, 'username') else None
+    
+    # Явная проверка для пользователя avr3lia
+    if username == "avr3lia":
+        is_admin = True
+        admin_button = types.KeyboardButton('/admin_feedback') 
+        markup.add(admin_button)
+    
     help_text = (
         "🤖 Language Mirror Bot - Помощь\n\n"
         "Я помогаю вам практиковать английский язык через естественное общение. "
@@ -678,7 +696,7 @@ def handle_help(message):
         "Если у вас возникли проблемы или вопросы, пожалуйста, обратитесь к администратору."
     )
     
-    bot.send_message(message.chat.id, help_text)
+    bot.send_message(message.chat.id, help_text, reply_markup=markup)
 
 # Добавляем команду для получения отчета о обратной связи
 @bot.message_handler(commands=['admin_feedback'])
@@ -741,21 +759,57 @@ def handle_admin_feedback(message):
     
     try:
         # Используем requests для запроса данных обратной связи из базы данных
-        # (предполагая, что API доступен и работает на localhost:5000)
-        response = requests.get("http://localhost:5000/api/feedback")
+        # Для доступа к API используем 'host.docker.internal:5000' для Docker или localhost
+        api_urls = [
+            "http://localhost:5000/api/feedback",  # Стандартный URL
+            "http://127.0.0.1:5000/api/feedback",  # Альтернативный локальный IP
+            "http://host.docker.internal:5000/api/feedback"  # Docker-адрес для хоста
+        ]
         
-        if response.status_code != 200:
+        # Пробуем разные URL до первого успешного
+        response = None
+        last_error = None
+        success = False
+        
+        for url in api_urls:
+            try:
+                logger.info(f"Пробуем получить данные обратной связи по URL: {url}")
+                response = requests.get(url, timeout=3)
+                if response.status_code == 200:
+                    success = True
+                    logger.info(f"Успешно получены данные с {url}")
+                    break
+                else:
+                    logger.warning(f"Ошибка при доступе к {url}: {response.status_code}")
+                    last_error = f"Код: {response.status_code}, Текст: {response.text}"
+            except Exception as e:
+                logger.warning(f"Не удалось подключиться к {url}: {e}")
+                last_error = str(e)
+                continue
+        
+        if not success:
             bot.reply_to(
                 message,
-                f"Ошибка при получении данных обратной связи: {response.status_code}\n"
-                f"Сообщение: {response.text}"
+                f"⚠️ Не удалось получить данные обратной связи.\n\n"
+                f"Это может происходить потому, что API обратной связи недоступен. "
+                f"Пожалуйста, проверьте, запущен ли веб-сервер.\n\n"
+                f"Техническая информация: {last_error}"
             )
             return
         
         feedback_data = response.json()
         
         if not feedback_data:
-            bot.reply_to(message, "Данные обратной связи отсутствуют.")
+            # Отправляем сообщение с информацией и подсказкой, как добавить данные
+            bot.reply_to(
+                message, 
+                "📝 Данные обратной связи отсутствуют.\n\n"
+                "Обратная связь появится здесь, когда пользователи завершат диалоги "
+                "с ботом и оставят свои отзывы.\n\n"
+                "Вы можете добавить тестовые данные с помощью скрипта add_test_feedback.py:\n"
+                "```\npython add_test_feedback.py\n```\n\n"
+                "Этот скрипт добавит случайные тестовые отзывы в базу данных."
+            )
             return
         
         # Формируем отчет
