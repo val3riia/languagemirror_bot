@@ -12,6 +12,8 @@ import time
 import random
 import logging
 import json
+import requests
+import threading
 from datetime import datetime
 
 # Настройка логирования

@@ -9,197 +9,239 @@ import os
 import sys
 import json
 import requests
-import random
-from datetime import datetime, timedelta
+import subprocess
+from datetime import datetime
 
-# Base URL
-BASE_URL = "http://localhost:5000"
-API_URL = f"{BASE_URL}/api/feedback"
+from add_test_feedback import add_test_feedback
 
 def print_header(text):
     """Печатает заголовок для CLI меню"""
-    print("\n" + "=" * 50)
-    print(f"   {text}")
-    print("=" * 50)
+    width = 60
+    print("\n" + "=" * width)
+    print(f"{text.center(width)}")
+    print("=" * width + "\n")
 
 def print_menu():
     """Печатает главное меню"""
-    print_header("LANGUAGE MIRROR BOT - АДМИНИСТРАТИВНЫЕ ИНСТРУМЕНТЫ")
-    print("\n1. Проверить статус бота")
-    print("2. Добавить тестовые данные обратной связи")
-    print("3. Просмотреть все данные обратной связи")
-    print("4. Очистить данные обратной связи")
-    print("5. Проверить переменные окружения")
-    print("0. Выход")
+    print_header("LANGUAGE MIRROR BOT - ADMIN TOOLS")
+    
+    print("1. Check Bot Status")
+    print("2. Add Test Feedback Data")
+    print("3. View Feedback")
+    print("4. Check Environment")
+    print("5. Start Bot")
+    print("0. Exit")
+    
+    print("\n" + "-" * 60)
 
 def check_bot_status():
     """Проверяет статус бота, отправляя запрос к API"""
-    print_header("ПРОВЕРКА СТАТУСА БОТА")
+    print_header("BOT STATUS CHECK")
     
     try:
-        response = requests.get(f"{BASE_URL}/api/feedback")
+        # Проверка, запущен ли сервер Flask
+        response = requests.get("http://localhost:5000/api/status", timeout=2)
         
         if response.status_code == 200:
-            print("\n✓ Бот запущен и API работает!")
-            print(f"✓ HTTP Status: {response.status_code}")
+            status = response.json()
+            print(f"✓ Web server is running")
+            print(f"  - Server time: {status.get('server_time')}")
+            print(f"  - Uptime: {status.get('uptime', 'N/A')}")
+            print(f"  - Database connected: {status.get('db_connected', False)}")
+            print(f"  - Bot active: {status.get('bot_active', False)}")
+            
+            # Показываем статистику, если есть
+            stats = status.get("stats", {})
+            if stats:
+                print("\nSTATISTICS:")
+                print(f"  - Users: {stats.get('users_count', 0)}")
+                print(f"  - Sessions: {stats.get('sessions_count', 0)}")
+                print(f"  - Active sessions: {stats.get('active_sessions', 0)}")
+                print(f"  - Messages: {stats.get('messages_count', 0)}")
+                print(f"  - Feedback entries: {stats.get('feedback_count', 0)}")
         else:
-            print("\n✗ API вернуло необычный статус-код:")
-            print(f"✗ HTTP Status: {response.status_code}")
-            print(f"✗ Response: {response.text}")
+            print(f"✗ Web server returned status code: {response.status_code}")
     
     except requests.exceptions.ConnectionError:
-        print("\n✗ Не удалось подключиться к API. Проверьте, запущен ли сервер.")
+        print("✗ Could not connect to server. Is the Flask server running?")
+        print("  Run 'python main.py' in a separate terminal to start the server.")
     except Exception as e:
-        print(f"\n✗ Ошибка при проверке статуса: {e}")
+        print(f"✗ Error checking bot status: {e}")
     
-    input("\nНажмите Enter для продолжения...")
+    input("\nPress Enter to return to the menu...")
 
-def add_test_feedback():
+def add_test_feedback_menu():
     """Добавляет тестовые данные обратной связи"""
-    print_header("ДОБАВЛЕНИЕ ТЕСТОВЫХ ДАННЫХ")
+    print_header("ADD TEST FEEDBACK DATA")
     
-    # Имена пользователей для генерации тестовых данных
-    sample_usernames = [
-        "user1", "language_learner", "alex_student", "english_fan", 
-        "maria_novice", "john_doe", "jane_smith", "learner2023"
-    ]
-
-    # Возможные рейтинги
-    ratings = ["helpful", "okay", "not_helpful"]
-
-    # Примеры комментариев
-    sample_comments = [
-        "Отличный бот! Очень помог с практикой разговорного английского.",
-        "Хорошо исправляет ошибки, но иногда не понимает контекст.",
-        "Понравилась возможность обсуждать интересные темы.",
-        "Нужно больше разнообразных тем для обсуждения.",
-        "Слишком строгие исправления, чувствую себя неуверенно.",
-        "Замечательный инструмент для ежедневной практики!",
-        "Бот хорошо адаптируется к моему уровню.",
-        "Хотелось бы больше объяснений грамматических правил.",
-        "Очень полезно для понимания разговорных фраз.",
-        "Отлично помог мне подготовиться к собеседованию на английском.",
-        "",  # пустой комментарий
-    ]
+    if not os.environ.get("DATABASE_URL"):
+        print("✗ DATABASE_URL environment variable is not set.")
+        print("  Please set it to connect to your PostgreSQL database.")
+        input("\nPress Enter to return to the menu...")
+        return
     
     try:
-        count = int(input("\nВведите количество тестовых отзывов (по умолчанию 5): ") or "5")
+        count = input("How many feedback entries to add? (default: 10): ")
+        count = int(count) if count else 10
+        
+        if count <= 0:
+            print("✗ Count must be greater than 0.")
+            input("\nPress Enter to return to the menu...")
+            return
+        
+        print(f"\nAdding {count} test feedback entries...")
+        add_test_feedback(count)
+        print("✓ Test data added successfully!")
+    
     except ValueError:
-        count = 5
-        print("Введено некорректное значение, используется значение по умолчанию: 5")
+        print("✗ Please enter a valid number.")
+    except Exception as e:
+        print(f"✗ Error adding test feedback: {e}")
     
-    print(f"\nДобавление {count} тестовых отзывов...")
-    
-    success = 0
-    for i in range(count):
-        # Генерируем случайные данные
-        user_id = random.randint(100000, 999999)
-        username = random.choice(sample_usernames)
-        rating = random.choice(ratings)
-        comment = random.choice(sample_comments)
-        
-        # Создаем данные для отправки
-        feedback_data = {
-            "user_id": user_id,
-            "username": username,
-            "rating": rating,
-            "comment": comment
-        }
-        
-        # Пытаемся отправить запрос
-        try:
-            response = requests.post(API_URL, json=feedback_data)
-            
-            if response.status_code == 201:
-                success += 1
-                print(f"✓ Успешно добавлен отзыв #{i+1}: {username} - {rating}")
-            else:
-                print(f"✗ Ошибка при добавлении отзыва #{i+1}: {response.status_code} - {response.text}")
-        
-        except Exception as e:
-            print(f"✗ Ошибка при отправке запроса: {e}")
-    
-    print(f"\nУспешно добавлено {success} из {count} отзывов.")
-    input("\nНажмите Enter для продолжения...")
+    input("\nPress Enter to return to the menu...")
 
 def view_feedback():
     """Показывает все данные обратной связи"""
-    print_header("ПРОСМОТР ДАННЫХ ОБРАТНОЙ СВЯЗИ")
+    print_header("VIEW FEEDBACK")
     
     try:
-        response = requests.get(API_URL)
+        response = requests.get("http://localhost:5000/api/feedback", timeout=5)
         
         if response.status_code == 200:
-            data = response.json()
+            feedback_data = response.json().get("feedback", [])
             
-            if not data:
-                print("\nДанные обратной связи отсутствуют.")
-            else:
-                print(f"\nНайдено {len(data)} записей:\n")
+            if not feedback_data:
+                print("No feedback data found.")
+                input("\nPress Enter to return to the menu...")
+                return
+            
+            print(f"Showing {len(feedback_data)} feedback entries:\n")
+            
+            for i, feedback in enumerate(feedback_data):
+                rating = feedback.get("rating", "unknown")
+                comment = feedback.get("comment", "No comment")
+                username = feedback.get("username", "Anonymous")
+                timestamp = feedback.get("timestamp", "Unknown time")
                 
-                for item in data:
-                    rating_display = item['rating']
-                    if rating_display == 'helpful':
-                        rating_display = '👍 Helpful'
-                    elif rating_display == 'okay':
-                        rating_display = '🤔 Okay'
-                    elif rating_display == 'not_helpful':
-                        rating_display = '👎 Not helpful'
-                    
-                    print(f"ID: {item.get('id', 'N/A')}")
-                    print(f"Пользователь: {item.get('username', 'unknown')} (ID: {item.get('user_id', 'unknown')})")
-                    print(f"Оценка: {rating_display}")
-                    print(f"Комментарий: {item.get('comment', '')}")
-                    print(f"Время: {item.get('timestamp', 'unknown')}")
-                    print("-" * 40)
+                rating_symbol = "👍" if rating == "helpful" else "🤔" if rating == "okay" else "👎"
+                
+                print(f"{i+1}. {rating_symbol} {rating.upper()} from {username} at {timestamp}")
+                print(f"   \"{comment}\"")
+                print()
+            
         else:
-            print(f"\n✗ Ошибка при получении данных: {response.status_code} - {response.text}")
+            print(f"✗ Could not fetch feedback data. Status code: {response.status_code}")
     
+    except requests.exceptions.ConnectionError:
+        print("✗ Could not connect to server. Is the Flask server running?")
     except Exception as e:
-        print(f"\n✗ Ошибка при получении данных: {e}")
+        print(f"✗ Error viewing feedback: {e}")
     
-    input("\nНажмите Enter для продолжения...")
+    input("\nPress Enter to return to the menu...")
 
 def check_environment():
     """Проверяет переменные окружения"""
-    print_header("ПРОВЕРКА ПЕРЕМЕННЫХ ОКРУЖЕНИЯ")
+    print_header("ENVIRONMENT CHECK")
     
-    telegram_token = os.environ.get("TELEGRAM_TOKEN")
+    # Проверка ключевых переменных окружения
+    variables = {
+        "TELEGRAM_TOKEN": "Telegram Bot Token",
+        "DATABASE_URL": "Database Connection URL"
+    }
     
-    print("\nTELEGRAM_TOKEN:", "✓ Установлен" if telegram_token else "✗ Не установлен")
+    all_good = True
     
-    if not telegram_token:
-        print("\nДля работы бота необходимо установить TELEGRAM_TOKEN.")
-        print("Вы можете установить его через переменные окружения:")
-        print("  export TELEGRAM_TOKEN='your_telegram_bot_token'")
+    for var, description in variables.items():
+        value = os.environ.get(var)
+        if value:
+            masked_value = value[:3] + "*" * (len(value) - 6) + value[-3:] if len(value) > 6 else "***"
+            print(f"✓ {description} ({var}): {masked_value}")
+        else:
+            all_good = False
+            print(f"✗ {description} ({var}): Not set")
     
-    input("\nНажмите Enter для продолжения...")
+    if not all_good:
+        print("\nSome environment variables are missing. This may cause problems.")
+        print("Use these commands to set them (replace values with your actual data):")
+        
+        for var in variables:
+            if not os.environ.get(var):
+                print(f"  export {var}=your_{var.lower()}_here")
+    
+    # Проверка установленных библиотек
+    print("\nChecking required Python libraries:")
+    
+    libraries = [
+        "flask", "flask_sqlalchemy", "telebot", "sqlalchemy", "requests"
+    ]
+    
+    for lib in libraries:
+        try:
+            __import__(lib)
+            print(f"✓ {lib} is installed")
+        except ImportError:
+            all_good = False
+            print(f"✗ {lib} is NOT installed. Install it with: pip install {lib}")
+    
+    if all_good:
+        print("\n✅ All environment checks passed!")
+    else:
+        print("\n⚠️ Some environment checks failed. Please fix the issues above.")
+    
+    input("\nPress Enter to return to the menu...")
+
+def start_bot():
+    """Запускает бот в отдельном процессе"""
+    print_header("START BOT")
+    
+    if not os.environ.get("TELEGRAM_TOKEN"):
+        print("✗ TELEGRAM_TOKEN environment variable is not set.")
+        print("  You need to set this variable before starting the bot.")
+        input("\nPress Enter to return to the menu...")
+        return
+    
+    print("Starting Language Mirror bot...")
+    print("(Press Ctrl+C in the bot window to stop it)")
+    print("Returning to admin menu in this window.")
+    
+    try:
+        # Запускаем скрипт в новом окне терминала
+        if sys.platform.startswith('win'):
+            subprocess.Popen(["start", "cmd", "/k", "python", "language_mirror_telebot.py"], shell=True)
+        elif sys.platform.startswith('darwin'):  # macOS
+            subprocess.Popen(["osascript", "-e", 'tell app "Terminal" to do script "cd ' + os.getcwd() + ' && python language_mirror_telebot.py"'])
+        else:  # Linux
+            subprocess.Popen(["x-terminal-emulator", "-e", "python language_mirror_telebot.py 2>&1"])
+        
+        print("✓ Bot started in a new terminal window.")
+    except Exception as e:
+        print(f"✗ Error starting bot: {e}")
+        print("  Try running './start_bot.sh' manually in a separate terminal.")
+    
+    input("\nPress Enter to return to the menu...")
 
 def main():
     """Основная функция для запуска административных инструментов"""
     while True:
-        os.system('clear' if os.name != 'nt' else 'cls')
         print_menu()
+        choice = input("Select option (0-5): ")
         
-        choice = input("\nВыберите опцию (0-5): ")
-        
-        if choice == '0':
-            print("\nВыход из программы...")
-            sys.exit(0)
-        elif choice == '1':
+        if choice == "0":
+            print("\nExiting admin tools. Goodbye!")
+            break
+        elif choice == "1":
             check_bot_status()
-        elif choice == '2':
-            add_test_feedback()
-        elif choice == '3':
+        elif choice == "2":
+            add_test_feedback_menu()
+        elif choice == "3":
             view_feedback()
-        elif choice == '4':
-            print("\nЭта функция не реализована.")
-            input("\nНажмите Enter для продолжения...")
-        elif choice == '5':
+        elif choice == "4":
             check_environment()
+        elif choice == "5":
+            start_bot()
         else:
-            print("\nНеверный выбор. Попробуйте еще раз.")
-            input("\nНажмите Enter для продолжения...")
+            print("\nInvalid option. Please try again.")
+            input("Press Enter to continue...")
 
 if __name__ == "__main__":
     main()

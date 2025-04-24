@@ -6,43 +6,42 @@ Launcher for Language Mirror Telegram Bot.
 This script imports and runs the main bot function.
 """
 
+import os
 import sys
 import logging
-import os
+
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logger = logging.getLogger(__name__)
 
 def main():
-    # Configure logging
-    logging.basicConfig(
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        level=logging.INFO
-    )
-    logger = logging.getLogger(__name__)
-    
-    # Check if TELEGRAM_TOKEN is set
+    # Проверка наличия TELEGRAM_TOKEN
     if not os.environ.get("TELEGRAM_TOKEN"):
-        logger.error("TELEGRAM_TOKEN not set. Please set it to your Telegram bot token.")
-        print("ERROR: TELEGRAM_TOKEN environment variable is not set.")
-        print("Please set it to your Telegram bot token from BotFather.")
+        logger.error("TELEGRAM_TOKEN environment variable is not set")
+        print("ERROR: TELEGRAM_TOKEN environment variable is not set")
+        print("Please get a token from @BotFather and set it as an environment variable")
+        print("Example: export TELEGRAM_TOKEN=your_token_here")
         sys.exit(1)
     
-    # Try to import the bot code
+    # Проверка, какая версия бота доступна
     try:
-        logger.info("Starting Language Mirror Telegram Bot...")
-        
-        # Import and run the bot
-        from language_mirror_telebot import main as run_bot
-        run_bot()
-        
-    except ImportError as e:
-        logger.error(f"Failed to import bot: {e}")
-        print(f"ERROR: Failed to import bot code. {e}")
-        print("Make sure pytelegrambotapi is installed:")
-        print("  pip install pytelegrambotapi")
-        sys.exit(1)
-    except Exception as e:
-        logger.error(f"Error running bot: {e}")
-        print(f"ERROR: Failed to run bot. {e}")
-        sys.exit(1)
+        from language_mirror_telebot import main as telebot_main
+        logger.info("Starting Language Mirror bot using telebot (PyTelegramBotAPI)")
+        telebot_main()
+    except ImportError:
+        try:
+            from language_mirror_bot import main as ptb_main
+            logger.info("Starting Language Mirror bot using python-telegram-bot")
+            ptb_main()
+        except ImportError:
+            logger.error("Could not import either bot implementation")
+            print("ERROR: No bot implementation found")
+            print("Make sure either pytelegrambotapi or python-telegram-bot is installed")
+            print("Run: pip install pytelegrambotapi")
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

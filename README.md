@@ -1,96 +1,118 @@
-# Language Mirror - English Learning Telegram Bot
+# Language Mirror AI - Telegram Bot
 
-Language Mirror is a Telegram bot that helps users learn English through natural conversation, focusing on interests and emotions rather than formal language instruction.
+Language Mirror AI - это интерактивный Telegram бот для изучения английского языка через естественное общение. 
+Бот фокусируется на интересах и эмоциях пользователя, а не на формальном обучении языку.
 
-## Features
+## Особенности
 
-- **Natural Conversation**: Practice English in a way that feels like chatting with a friend
-- **Level Adaptation**: The bot adapts to your English level from A1 (beginner) to C2 (proficiency)
-- **Contextual Corrections**: Gentle corrections within the flow of conversation
-- **Topic Suggestions**: Conversation starters appropriate for your level
-- **Feedback Collection**: Share your experience after each conversation
+- 🗣️ **Естественное общение** - разговаривайте на интересные вам темы и улучшайте свой английский
+- 📝 **Коррекция ошибок** - получайте мягкие и полезные исправления, не нарушающие беседу
+- 🧠 **Адаптация к уровню** - бот настраивается под ваш уровень владения языком (от A1 до C2)
+- 📊 **Административная панель** - мониторинг и анализ взаимодействий пользователей
+- 💾 **Хранение данных** - PostgreSQL база данных для хранения сессий, сообщений и обратной связи
+- 🔄 **Обратная связь** - сбор отзывов пользователей для улучшения опыта обучения
 
-## Setup Instructions
+## Структура проекта
 
-### Prerequisites
-
-- Python 3.7+
-- A Telegram bot token (from [@BotFather](https://t.me/BotFather))
-
-### Installation
-
-1. Clone this repository:
-   ```
-   git clone https://github.com/yourusername/language-mirror.git
-   cd language-mirror
-   ```
-
-2. Install dependencies:
-   ```
-   pip install pytelegrambotapi
-   ```
-
-3. Set your Telegram bot token as an environment variable:
-   ```
-   export TELEGRAM_TOKEN="your_telegram_bot_token"
-   ```
-
-### Running the Bot
-
-Start the bot using the shell script:
 ```
-./start_bot.sh
+language_mirror_bot/
+├── db_session_manager.py     # Управление сессиями с поддержкой базы данных
+├── language_mirror_telebot.py # Основной файл бота (PyTelegramBotAPI)
+├── language_mirror_bot.py    # Альтернативная версия бота (python-telegram-bot)
+├── models.py                 # Модели данных SQLAlchemy
+├── main.py                   # Flask приложение с административной панелью
+├── admin_tools.py            # Утилиты администратора (CLI)
+├── database_utils.py         # Утилиты для работы с базой данных
+├── add_test_feedback.py      # Скрипт для добавления тестовых данных
+├── templates/                # HTML шаблоны для административной панели
+├── static/                   # Статические файлы (CSS, JS)
+├── start_bot.sh              # Скрипт для запуска бота
+└── README.md                 # Документация проекта
 ```
 
-Or run the Python file directly:
+## Требования
+
+- Python 3.8+
+- PostgreSQL
+- Зависимости из requirements.txt:
+  - flask
+  - flask-sqlalchemy
+  - pytelegrambotapi (или python-telegram-bot)
+  - psycopg2-binary
+  - sqlalchemy
+  - gunicorn (для деплоя)
+
+## Установка и запуск
+
+1. **Клонируйте репозиторий**
+   ```bash
+   git clone https://github.com/yourusername/language-mirror-bot.git
+   cd language-mirror-bot
+   ```
+
+2. **Установите зависимости**
+   ```bash
+   pip install -r requirements.txt
+   ```
+
+3. **Настройте переменные окружения**
+   ```bash
+   # Токен вашего Telegram бота (получите у @BotFather)
+   export TELEGRAM_TOKEN=your_telegram_token
+   
+   # URL подключения к PostgreSQL
+   export DATABASE_URL=postgresql://user:password@localhost:5432/language_mirror_db
+   ```
+
+4. **Запустите бота**
+
+   С помощью скрипта:
+   ```bash
+   ./start_bot.sh
+   ```
+   
+   Или напрямую:
+   ```bash
+   python language_mirror_telebot.py
+   ```
+
+5. **Запустите веб-интерфейс администратора** (в отдельном терминале)
+   ```bash
+   python main.py
+   ```
+   Административная панель будет доступна по адресу: http://localhost:5000/admin
+
+## Использование административных инструментов
+
+Можно запустить CLI утилиты для администрирования:
+```bash
+python admin_tools.py
 ```
-python language_mirror_telebot.py
-```
 
-## Bot Commands
+Это позволит:
+- Проверить статус бота
+- Добавить тестовые данные обратной связи
+- Посмотреть статистику использования
+- Проверить настройки окружения
+- Запустить бота из административной консоли
 
-- `/start` - Get an introduction to the bot
-- `/discussion` - Start a new English learning conversation
-- `/stop_discussion` - End the current conversation and provide feedback
-- `/skip` - Skip providing feedback comment
+## Особенности реализации
 
-## Usage Guide
+### Менеджер сессий
+Бот использует усовершенствованный менеджер сессий с поддержкой PostgreSQL базы данных для надежного хранения истории сообщений и информации о пользователях. Это обеспечивает:
 
-1. Start the bot by sending `/start`
-2. Begin a conversation with `/discussion`
-3. Select your English proficiency level
-4. Chat naturally in English
-5. Receive gentle corrections and guidance
-6. End the session with `/stop_discussion` when you're done
-7. Provide feedback about your experience
+- Персистентность сессий между перезапусками бота
+- Анализ взаимодействий пользователей
+- Безопасное хранение данных
 
-## How It Works
+### Административная панель
+Веб-интерфейс администратора позволяет:
 
-The Language Mirror bot uses a simulated conversation system that:
+- Отслеживать активные сессии
+- Анализировать обратную связь
+- Просматривать статистику использования
+- Контролировать работу бота
 
-1. Adapts to your stated English level
-2. Recognizes common language errors
-3. Provides corrections naturally in conversation
-4. Suggests topics appropriate to your level
-5. Maintains natural conversation flow with follow-up questions
-6. Offers encouragement to keep you motivated
+## Лицензия
 
-## Implementation Details
-
-- Built using PyTelegramBotAPI (telebot)
-- Session management for user conversation tracking
-- Customized response generation based on language level
-- Intelligent error detection and correction
-- Feedback collection system
-
-## Future Enhancements
-
-- Voice message recognition for pronunciation practice
-- Personalized vocabulary recommendations
-- Progress tracking across sessions
-- Grammar focus mode for targeted practice
-- Integration with language learning APIs
-
-## License
-
-[MIT License](LICENSE)
+MIT
