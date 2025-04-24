@@ -185,7 +185,31 @@ def handle_start(message):
     start_button = types.KeyboardButton('/discussion')
     stop_button = types.KeyboardButton('/stop_discussion')
     help_button = types.KeyboardButton('/help')
+    
+    # Проверяем, является ли пользователь администратором
+    is_admin = False
+    user_id = message.from_user.id
+    
+    # Проверка по ID
+    admin_ids = [0]  # Временный ID, бует заменен
+    if user_id in admin_ids:
+        is_admin = True
+    
+    # Проверка по имени пользователя
+    if hasattr(message.from_user, 'username') and message.from_user.username:
+        # Явная проверка для пользователя avr3lia
+        if message.from_user.username == "avr3lia":
+            is_admin = True
+            logger.info(f"Администратор avr3lia обнаружен при /start")
+    
+    # Добавляем основные кнопки
     markup.add(start_button, stop_button, help_button)
+    
+    # Добавляем кнопку администратора, если это администратор
+    if is_admin:
+        admin_button = types.KeyboardButton('/admin_feedback')
+        markup.add(admin_button)
+        logger.info(f"Добавлена кнопка администратора для пользователя {message.from_user.username}")
     
     # Отправляем приветственное сообщение с клавиатурой
     welcome_text = (
@@ -669,10 +693,49 @@ def handle_admin_feedback(message):
     # Чтобы получить свой Telegram ID, отправьте команду /start боту @userinfobot и добавьте ID ниже
     # ВАЖНО: Добавьте сюда свой числовой Telegram ID, чтобы получить доступ к функции администратора
     # Например: admin_ids = [123456789, 987654321]
-    admin_ids = []
+    admin_ids = [0]  # Временный ID, который будет заменен
+    
+    # Пытаемся получить имя пользователя "avr3lia" из базы данных, чтобы получить его ID
+    try:
+        # Проверяем, существует ли пользователь с именем avr3lia
+        from models import User, db
+        with app.app_context():
+            admin_user = User.query.filter_by(username="avr3lia").first()
+            if admin_user:
+                admin_ids.append(admin_user.telegram_id)
+                logger.info(f"Добавлен администратор: {admin_user.username} (ID: {admin_user.telegram_id})")
+            else:
+                # Если пользователя нет в базе, используем значение по умолчанию из переменной окружения
+                admin_telegram_id = os.environ.get("ADMIN_TELEGRAM_ID")
+                if admin_telegram_id and admin_telegram_id.isdigit():
+                    admin_ids.append(int(admin_telegram_id))
+                    logger.info(f"Добавлен администратор из переменной окружения: {admin_telegram_id}")
+                else:
+                    logger.warning("Не удалось найти ID администратора. Команда /admin_feedback будет недоступна.")
+    except Exception as e:
+        logger.error(f"Ошибка при поиске администратора: {e}")
+        # Если произошла ошибка, добавляем текстовые имена администраторов, 
+        # которые будут проверяться отдельно
+        admin_usernames = ["avr3lia"]
+        logger.info(f"Установлены имена администраторов: {admin_usernames}")
     
     # Проверка является ли пользователь администратором
-    if user_id not in admin_ids:
+    is_admin = False
+    
+    # Проверяем по ID
+    if user_id in admin_ids:
+        is_admin = True
+    
+    # Проверяем по имени пользователя, если определено
+    if not is_admin and hasattr(message.from_user, 'username') and message.from_user.username:
+        if 'admin_usernames' in locals() and message.from_user.username in admin_usernames:
+            is_admin = True
+        # Явная проверка для пользователя avr3lia
+        elif message.from_user.username == "avr3lia":
+            is_admin = True
+            logger.info(f"Администратор avr3lia авторизован по имени пользователя")
+    
+    if not is_admin:
         bot.reply_to(message, "Извините, эта команда доступна только администраторам.")
         return
     
