@@ -706,64 +706,26 @@ def handle_admin_feedback(message):
     Эта команда доступна только администраторам и позволяет им получать отчет об обратной связи.
     """
     user_id = message.from_user.id
+    username = message.from_user.username if hasattr(message.from_user, 'username') else None
     
-    # Список ID администраторов (в реальном проекте это должно храниться в базе данных или env)
-    # Чтобы получить свой Telegram ID, отправьте команду /start боту @userinfobot и добавьте ID ниже
-    # ВАЖНО: Добавьте сюда свой числовой Telegram ID, чтобы получить доступ к функции администратора
-    # Например: admin_ids = [123456789, 987654321]
-    admin_ids = [0]  # Временный ID, который будет заменен
+    # Проверка на имя пользователя и ID администратора
+    is_admin = username == "avr3lia"  # Явно разрешенное имя пользователя
     
-    # Пытаемся получить имя пользователя "avr3lia" из базы данных, чтобы получить его ID
-    try:
-        # Проверяем, существует ли пользователь с именем avr3lia
-        from models import User, db
-        with app.app_context():
-            admin_user = User.query.filter_by(username="avr3lia").first()
-            if admin_user:
-                admin_ids.append(admin_user.telegram_id)
-                logger.info(f"Добавлен администратор: {admin_user.username} (ID: {admin_user.telegram_id})")
-            else:
-                # Если пользователя нет в базе, используем значение по умолчанию из переменной окружения
-                admin_telegram_id = os.environ.get("ADMIN_TELEGRAM_ID")
-                if admin_telegram_id and admin_telegram_id.isdigit():
-                    admin_ids.append(int(admin_telegram_id))
-                    logger.info(f"Добавлен администратор из переменной окружения: {admin_telegram_id}")
-                else:
-                    logger.warning("Не удалось найти ID администратора. Команда /admin_feedback будет недоступна.")
-    except Exception as e:
-        logger.error(f"Ошибка при поиске администратора: {e}")
-        # Если произошла ошибка, добавляем текстовые имена администраторов, 
-        # которые будут проверяться отдельно
-        admin_usernames = ["avr3lia"]
-        logger.info(f"Установлены имена администраторов: {admin_usernames}")
+    if is_admin:
+        logger.info(f"Администратор {username} авторизован по имени пользователя")
     
-    # Проверка является ли пользователь администратором
-    is_admin = False
-    
-    # Проверяем по ID
-    if user_id in admin_ids:
-        is_admin = True
-    
-    # Проверяем по имени пользователя, если определено
-    if not is_admin and hasattr(message.from_user, 'username') and message.from_user.username:
-        if 'admin_usernames' in locals() and message.from_user.username in admin_usernames:
-            is_admin = True
-        # Явная проверка для пользователя avr3lia
-        elif message.from_user.username == "avr3lia":
-            is_admin = True
-            logger.info(f"Администратор avr3lia авторизован по имени пользователя")
-    
+    # Отказываем в доступе неадминистраторам
     if not is_admin:
         bot.reply_to(message, "Извините, эта команда доступна только администраторам.")
         return
     
+    bot.send_message(message.chat.id, "🔄 Получение данных обратной связи...")
+    
     try:
         # Используем requests для запроса данных обратной связи из базы данных
-        # Для доступа к API используем 'host.docker.internal:5000' для Docker или localhost
         api_urls = [
-            "http://localhost:5000/api/feedback",  # Стандартный URL
-            "http://127.0.0.1:5000/api/feedback",  # Альтернативный локальный IP
-            "http://host.docker.internal:5000/api/feedback"  # Docker-адрес для хоста
+            "http://localhost:5000/api/feedback",
+            "http://127.0.0.1:5000/api/feedback"
         ]
         
         # Пробуем разные URL до первого успешного
@@ -773,26 +735,21 @@ def handle_admin_feedback(message):
         
         for url in api_urls:
             try:
-                logger.info(f"Пробуем получить данные обратной связи по URL: {url}")
                 response = requests.get(url, timeout=3)
                 if response.status_code == 200:
                     success = True
-                    logger.info(f"Успешно получены данные с {url}")
                     break
                 else:
-                    logger.warning(f"Ошибка при доступе к {url}: {response.status_code}")
-                    last_error = f"Код: {response.status_code}, Текст: {response.text}"
+                    last_error = f"Код: {response.status_code}"
             except Exception as e:
-                logger.warning(f"Не удалось подключиться к {url}: {e}")
                 last_error = str(e)
                 continue
         
         if not success:
-            bot.reply_to(
-                message,
+            bot.send_message(
+                message.chat.id,
                 f"⚠️ Не удалось получить данные обратной связи.\n\n"
-                f"Это может происходить потому, что API обратной связи недоступен. "
-                f"Пожалуйста, проверьте, запущен ли веб-сервер.\n\n"
+                f"API обратной связи недоступен. Проверьте, запущен ли веб-сервер.\n\n"
                 f"Техническая информация: {last_error}"
             )
             return
@@ -800,24 +757,18 @@ def handle_admin_feedback(message):
         feedback_data = response.json()
         
         if not feedback_data:
-            # Отправляем сообщение с информацией и подсказкой, как добавить данные
-            bot.reply_to(
-                message, 
+            # Отправляем сообщение с информацией при отсутствии данных
+            bot.send_message(
+                message.chat.id, 
                 "📝 Данные обратной связи отсутствуют.\n\n"
                 "Обратная связь появится здесь, когда пользователи завершат диалоги "
                 "с ботом и оставят свои отзывы.\n\n"
-                "Вы можете добавить тестовые данные с помощью скрипта add_test_feedback.py:\n"
-                "```\npython add_test_feedback.py\n```\n\n"
-                "Этот скрипт добавит случайные тестовые отзывы в базу данных."
+                "Вы можете добавить тестовые данные с помощью скрипта add_test_feedback.py."
             )
             return
         
         # Формируем отчет
-        rating_counts = {
-            "helpful": 0,
-            "okay": 0,
-            "not_helpful": 0
-        }
+        rating_counts = {"helpful": 0, "okay": 0, "not_helpful": 0}
         
         for item in feedback_data:
             rating = item.get('rating')
@@ -829,19 +780,27 @@ def handle_admin_feedback(message):
         report += f"👍 Полезно: {rating_counts['helpful']}\n"
         report += f"🤔 Нормально: {rating_counts['okay']}\n"
         report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
-        report += "Последние 5 комментариев:"
         
         # Добавляем последние 5 комментариев
-        for i, item in enumerate(feedback_data[:5]):
+        report += "Последние комментарии:"
+        comment_count = 0
+        
+        for item in feedback_data:
             if item.get('comment'):
-                report += f"\n{i+1}. {item.get('rating', 'unknown')}: \"{item.get('comment')}\""
+                comment_count += 1
+                report += f"\n{comment_count}. {item.get('rating', 'unknown')}: \"{item.get('comment')}\""
+                if comment_count >= 5:
+                    break
+                    
+        if comment_count == 0:
+            report += "\nКомментариев пока нет."
         
         # Отправляем отчет
-        bot.reply_to(message, report)
+        bot.send_message(message.chat.id, report)
         
     except Exception as e:
-        bot.reply_to(
-            message, 
+        bot.send_message(
+            message.chat.id, 
             f"Произошла ошибка при получении данных обратной связи: {str(e)}"
         )
         logger.error(f"Error in admin_feedback: {e}")
