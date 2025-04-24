@@ -15,6 +15,7 @@ import json
 import requests
 import threading
 from datetime import datetime
+from openrouter_client import OpenRouterClient
 
 # Настройка логирования
 logging.basicConfig(
