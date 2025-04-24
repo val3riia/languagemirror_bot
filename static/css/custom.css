@@ -1,0 +1,38 @@
+/* Custom styles for Language Mirror */
+
+body {
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+.container {
+    flex: 1;
+}
+
+.card {
+    border-radius: 8px;
+    border: 1px solid var(--bs-border-color);
+}
+
+.card-header {
+    background-color: rgba(var(--bs-dark-rgb), 0.03);
+    border-bottom: 1px solid var(--bs-border-color);
+}
+
+/* Admin dashboard styles */
+.table-responsive {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+/* Custom alert styles */
+.alert {
+    border-radius: 8px;
+}
+
+/* Footer styles */
+footer {
+    margin-top: auto;
+    padding-bottom: 20px;
+}
