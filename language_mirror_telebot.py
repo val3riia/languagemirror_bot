@@ -134,7 +134,7 @@ CONVERSATION_TOPICS = {
     ]
 }
 
-# Шаблоны ответов для симуляции разговора с обучением языку
+# Шаблоны ответов для симуляции разговора с обучением языку (резервный вариант)
 SAMPLE_RESPONSES = {
     "greeting": [
         "Hello! How are you today?",
@@ -157,6 +157,9 @@ SAMPLE_RESPONSES = {
         "I'm impressed with how you structured that thought!"
     ]
 }
+
+# Создаем клиент OpenRouter для генерации ответов AI
+openrouter_client = OpenRouterClient()
 
 # Простые шаблоны для исправления (для демонстрации)
 CORRECTION_PATTERNS = {
@@ -425,44 +428,115 @@ def handle_feedback_comment(message):
     elif user_id in user_sessions:
         del user_sessions[user_id]
 
-def generate_learning_response(user_message: str, language_level: str) -> str:
+def generate_learning_response(user_message: str, language_level: str, conversation_history=None) -> str:
     """
     Генерирует ответ для обучения языку на основе сообщения пользователя и уровня.
     
-    Это упрощенная симуляция того, что обычно обрабатывается моделью ИИ.
+    Использует OpenRouter API для генерации естественных ответов с учетом уровня владения языком.
+    В случае недоступности API использует резервный режим с шаблонами.
+    
+    Args:
+        user_message: Сообщение пользователя
+        language_level: Уровень владения языком (A1-C2)
+        conversation_history: История сообщений для сохранения контекста
+    
+    Returns:
+        Ответ с обучающим контентом
     """
-    # Проверяем возможности для исправления
-    correction = None
-    for pattern, correction_text in CORRECTION_PATTERNS.items():
-        if pattern.lower() in user_message.lower():
-            correction = (pattern, correction_text)
-            break
-    
-    # Формируем ответ
-    response_parts = []
-    
-    # Добавляем уточняющий вопрос или комментарий
-    response_parts.append(random.choice(SAMPLE_RESPONSES["follow_up"]))
-    
-    # Добавляем языковую коррекцию, если применимо
-    if correction and language_level not in ["C1", "C2"]:  # Меньше исправлений для продвинутых пользователей
-        response_parts.append(
-            random.choice(SAMPLE_RESPONSES["language_correction"]).format(
-                correction[0], correction[1]
+    # Попробуем использовать OpenRouter для генерации более естественного ответа
+    try:
+        # Создаем системное сообщение в зависимости от уровня
+        system_messages = {
+            "A1": """You are an English language tutor helping a beginner (A1 level) student. 
+                    Use very simple vocabulary and basic grammar structures. 
+                    Keep sentences short (5-7 words) and use present simple tense mostly.
+                    Gently correct obvious mistakes in their English.
+                    Speak like you're talking to a child, but respectfully.""",
+                    
+            "A2": """You are an English language tutor helping an elementary (A2 level) student.
+                    Use simple vocabulary and basic grammar structures including present, past, and future tenses.
+                    Keep sentences relatively short and avoid complex clauses.
+                    Offer corrections for common mistakes while being supportive.""",
+                    
+            "B1": """You are an English language tutor helping an intermediate (B1 level) student.
+                    Use a wider range of vocabulary and include some idioms.
+                    Use various tenses appropriately but avoid overly complex grammatical structures.
+                    Correct errors that interfere with understanding while acknowledging good use of language.""",
+                    
+            "B2": """You are an English language tutor helping an upper-intermediate (B2 level) student.
+                    Use a wide vocabulary including some academic words and phrasal verbs.
+                    Use complex grammatical structures when appropriate.
+                    Focus on nuanced corrections and improving fluency rather than basic errors.""",
+                    
+            "C1": """You are an English language tutor helping an advanced (C1 level) student.
+                    Use sophisticated vocabulary, idioms, and colloquialisms appropriately.
+                    Use a full range of grammatical structures including complex and compound-complex sentences.
+                    Focus on subtle improvements in expression and style rather than obvious errors.""",
+                    
+            "C2": """You are an English language tutor helping a proficient (C2 level) student.
+                    Use sophisticated vocabulary, cultural references, and nuanced expressions.
+                    Focus on very specific feedback about style, register, and tone.
+                    Treat the student as a near-native speaker and engage in high-level discussion."""
+        }
+        
+        # Получаем системное сообщение для данного уровня или используем B1 по умолчанию
+        system_message = system_messages.get(language_level, system_messages["B1"])
+        
+        # Если история сообщений не передана, создаем новый список только с текущим сообщением
+        if not conversation_history:
+            messages = [{"role": "user", "content": user_message}]
+        else:
+            # Ограничиваем историю до 10 последних сообщений, чтобы не превышать лимиты токенов
+            messages = conversation_history[-10:]
+            # Убедимся, что последнее сообщение - текущий запрос пользователя
+            if messages and messages[-1]["role"] != "user":
+                messages.append({"role": "user", "content": user_message})
+        
+        # Получаем ответ от OpenRouter
+        response = openrouter_client.get_completion(system_message, messages)
+        
+        # Если получили пустой ответ, используем резервный режим
+        if not response or response.strip() == "":
+            raise Exception("Empty response from OpenRouter")
+            
+        return response
+        
+    except Exception as e:
+        # Логируем ошибку
+        logger.error(f"Error using OpenRouter API: {e}. Falling back to template mode.")
+        
+        # Резервный режим - используем шаблоны
+        correction = None
+        for pattern, correction_text in CORRECTION_PATTERNS.items():
+            if pattern.lower() in user_message.lower():
+                correction = (pattern, correction_text)
+                break
+        
+        # Формируем ответ
+        response_parts = []
+        
+        # Добавляем уточняющий вопрос или комментарий
+        response_parts.append(random.choice(SAMPLE_RESPONSES["follow_up"]))
+        
+        # Добавляем языковую коррекцию, если применимо
+        if correction and language_level not in ["C1", "C2"]:  # Меньше исправлений для продвинутых пользователей
+            response_parts.append(
+                random.choice(SAMPLE_RESPONSES["language_correction"]).format(
+                    correction[0], correction[1]
+                )
             )
-        )
-    
-    # Добавляем подбадривание
-    if random.random() < 0.3:  # 30% шанс добавить подбадривание
-        response_parts.append(random.choice(SAMPLE_RESPONSES["encouragement"]))
-    
-    # Добавляем предложение темы для уровней A1-B1
-    if language_level in ["A1", "A2", "B1"] and random.random() < 0.4:
-        topics = CONVERSATION_TOPICS.get(language_level, [])
-        if topics:
-            response_parts.append(f"By the way, {random.choice(topics)}")
-    
-    return " ".join(response_parts)
+        
+        # Добавляем подбадривание
+        if random.random() < 0.3:  # 30% шанс добавить подбадривание
+            response_parts.append(random.choice(SAMPLE_RESPONSES["encouragement"]))
+        
+        # Добавляем предложение темы для уровней A1-B1
+        if language_level in ["A1", "A2", "B1"] and random.random() < 0.4:
+            topics = CONVERSATION_TOPICS.get(language_level, [])
+            if topics:
+                response_parts.append(f"By the way, {random.choice(topics)}")
+        
+        return " ".join(response_parts)
 
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
@@ -510,8 +584,15 @@ def handle_all_messages(message):
         user_sessions[user_id]["messages"].append({"role": "user", "content": user_message})
         user_sessions[user_id]["last_active"] = time.time()
     
-    # Генерируем ответ на основе сообщения пользователя
-    response = generate_learning_response(user_message, language_level)
+    # Получаем историю сообщений для контекста
+    conversation_history = []
+    if 'session_manager' in globals():
+        conversation_history = session_manager.get_messages(user_id)
+    elif user_id in user_sessions and "messages" in user_sessions[user_id]:
+        conversation_history = user_sessions[user_id]["messages"]
+    
+    # Генерируем ответ на основе сообщения пользователя и истории
+    response = generate_learning_response(user_message, language_level, conversation_history)
     
     # Сохраняем ответ бота в сессии
     if 'session_manager' in globals():
@@ -521,6 +602,77 @@ def handle_all_messages(message):
     
     # Отправляем ответ пользователю
     bot.send_message(message.chat.id, response)
+
+# Добавляем команду для получения отчета о обратной связи
+@bot.message_handler(commands=['admin_feedback'])
+def handle_admin_feedback(message):
+    """
+    Обрабатывает команду /admin_feedback.
+    Эта команда доступна только администраторам и позволяет им получать отчет об обратной связи.
+    """
+    user_id = message.from_user.id
+    
+    # Список ID администраторов (в реальном проекте это должно храниться в базе данных или env)
+    # Рекомендуется добавить здесь свой Telegram ID, чтобы получить доступ к функции администратора
+    admin_ids = []
+    
+    # Проверка является ли пользователь администратором
+    if user_id not in admin_ids:
+        bot.reply_to(message, "Извините, эта команда доступна только администраторам.")
+        return
+    
+    try:
+        # Используем requests для запроса данных обратной связи из базы данных
+        # (предполагая, что API доступен и работает на localhost:5000)
+        response = requests.get("http://localhost:5000/api/feedback")
+        
+        if response.status_code != 200:
+            bot.reply_to(
+                message,
+                f"Ошибка при получении данных обратной связи: {response.status_code}\n"
+                f"Сообщение: {response.text}"
+            )
+            return
+        
+        feedback_data = response.json()
+        
+        if not feedback_data:
+            bot.reply_to(message, "Данные обратной связи отсутствуют.")
+            return
+        
+        # Формируем отчет
+        rating_counts = {
+            "helpful": 0,
+            "okay": 0,
+            "not_helpful": 0
+        }
+        
+        for item in feedback_data:
+            rating = item.get('rating')
+            if rating in rating_counts:
+                rating_counts[rating] += 1
+                
+        # Отправляем отчет администратору
+        report = "📊 Отчет по обратной связи\n\n"
+        report += f"👍 Полезно: {rating_counts['helpful']}\n"
+        report += f"🤔 Нормально: {rating_counts['okay']}\n"
+        report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
+        report += "Последние 5 комментариев:\n"
+        
+        # Добавляем последние 5 комментариев
+        for i, item in enumerate(feedback_data[:5]):
+            if item.get('comment'):
+                report += f"\n{i+1}. {item.get('rating', 'unknown')}: \"{item.get('comment')}\""
+        
+        # Отправляем отчет
+        bot.reply_to(message, report)
+        
+    except Exception as e:
+        bot.reply_to(
+            message, 
+            f"Произошла ошибка при получении данных обратной связи: {str(e)}"
+        )
+        logger.error(f"Error in admin_feedback: {e}")
 
 def main():
     """Запускает бота."""
