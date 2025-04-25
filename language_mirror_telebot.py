@@ -46,17 +46,21 @@ if not TELEGRAM_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # Список администраторов (имена пользователей и ID)
-ADMIN_USERS = {
-    "avr3lia": 5783753055
-}
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
+ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "")
 
-# Отладочный режим для отображения дополнительной информации об ошибках
-DEBUG_MODE = True
+# Словарь администраторов
+ADMIN_USERS = {}
+if ADMIN_USERNAME and ADMIN_USER_ID and ADMIN_USER_ID.isdigit():
+    ADMIN_USERS[ADMIN_USERNAME] = int(ADMIN_USER_ID)
 
-# Фиксированный ID администратора для тестирования
-# При любой проверке администратора данный ID будет автоматически считаться администратором
-# Это нужно для отладки команды /admin_feedback
-FORCE_ADMIN_ID = 5783753055
+# Отладочный режим (можно включить в .env)
+DEBUG_MODE = os.environ.get("DEBUG", "False").lower() == "true"
+
+# Дополнительные настройки из переменных окружения
+FEEDBACK_COMMENT_MIN_WORDS = int(os.environ.get("FEEDBACK_COMMENT_MIN_WORDS", "3"))
+MAX_DAILY_DISCUSSIONS = int(os.environ.get("MAX_DAILY_DISCUSSIONS", "5"))
+ENABLE_ARTICLE_SEARCH = os.environ.get("ENABLE_ARTICLE_SEARCH", "True").lower() == "true"
 
 # Уровни владения языком с описаниями
 LANGUAGE_LEVELS = {
@@ -205,9 +209,14 @@ def handle_start(message):
     markup.add(start_button)
     markup.add(discussion_button, stop_button)
     
-    # Проверяем, является ли пользователь администратором (только avr3lia)
+    # Проверяем, является ли пользователь администратором
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
-    if username == "avr3lia":
+    user_id = message.from_user.id
+    
+    # Проверяем по имени пользователя и ID
+    is_admin = username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id
+    
+    if is_admin:
         # Добавляем кнопку администратора
         admin_button = types.KeyboardButton('/admin_feedback')
         markup.add(admin_button)
@@ -315,7 +324,7 @@ def handle_discussion(message):
         elif user_record.last_discussion_date == today:
             # Проверяем, является ли пользователь администратором
             username = message.from_user.username if hasattr(message.from_user, 'username') else None
-            is_admin = (username == "avr3lia" or user_id == ADMIN_USERS.get("avr3lia"))
+            is_admin = username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id
             
             # Для администратора не действуют ограничения
             if is_admin:
