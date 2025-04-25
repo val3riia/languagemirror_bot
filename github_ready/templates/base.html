@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en" data-bs-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Language Mirror</title>
+    <link rel="stylesheet" href="https://cdn.replit.com/agent/bootstrap-agent-dark-theme.min.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/custom.css') }}">
+</head>
+<body>
+    <div class="container my-4">
+        <header class="mb-4">
+            <h1 class="display-4">Language Mirror</h1>
+            <p class="lead">English learning through natural conversation</p>
+        </header>
+
+        <main class="my-4">
+            {% if content %}
+                <div class="alert alert-info">{{ content }}</div>
+            {% else %}
+                <div class="card">
+                    <div class="card-body">
+                        <h5 class="card-title">Welcome to Language Mirror</h5>
+                        <p class="card-text">
+                            Language Mirror is a Telegram bot that helps you learn English through natural conversation.
+                            Our approach focuses on your interests and emotions rather than formal language instruction.
+                        </p>
+                        <h6>Key Features:</h6>
+                        <ul>
+                            <li>Natural conversations on topics that interest you</li>
+                            <li>Vocabulary building through dialogue, not word lists</li>
+                            <li>Grammar teaching as functional elements rather than technical rules</li>
+                            <li>Support for mixed-language inputs when you don't know a word</li>
+                        </ul>
+                        <a href="https://t.me/your_bot_username" class="btn btn-primary">Try the Bot on Telegram</a>
+                    </div>
+                </div>
+            {% endif %}
+        </main>
+
+        <footer class="mt-5 pt-3 border-top text-secondary">
+            <div class="row">
+                <div class="col-12 col-md text-center text-md-start">
+                    <p>&copy; 2023 Language Mirror</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
