@@ -217,6 +217,33 @@ def handle_start(message):
     
     # Отправляем сообщение
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
+    
+    # Обновляем пользователя в базе данных или создаем нового
+    try:
+        from models import db, User
+        from main import app
+        
+        with app.app_context():
+            # Ищем пользователя в базе данных
+            user_record = User.query.filter_by(telegram_id=message.from_user.id).first()
+            
+            if not user_record:
+                # Создаем нового пользователя, если не существует
+                user_record = User(
+                    telegram_id=message.from_user.id,
+                    username=message.from_user.username,
+                    first_name=message.from_user.first_name,
+                    last_name=message.from_user.last_name
+                )
+                db.session.add(user_record)
+                db.session.commit()
+                logger.info(f"New user registered: {message.from_user.id} ({message.from_user.username})")
+            else:
+                # Обновляем дату последней активности
+                user_record.last_activity = datetime.utcnow()
+                db.session.commit()
+    except Exception as e:
+        logger.error(f"Error updating user in database: {e}")
 
 @bot.message_handler(commands=['discussion'])
 def handle_discussion(message):
@@ -567,6 +594,26 @@ def handle_feedback_comment(message):
                     )
                     db.session.add(new_feedback)
                     db.session.commit()
+                    
+                    # Проверяем, содержит ли комментарий минимум 3 слова для предоставления бонуса
+                    words = comment.split()
+                    if len(words) >= 3:
+                        # Обновляем статус обратной связи пользователя, предоставляя бонус
+                        user.feedback_bonus_used = False  # Разрешаем использовать бонусный запрос
+                        db.session.commit()
+                        
+                        # Отправляем уведомление о бонусном запросе
+                        bot.send_message(
+                            user.telegram_id,
+                            "🎁 Thank you for your detailed feedback! You've received a bonus article request. "
+                            "Use /discussion to use it anytime today!"
+                        )
+                    else:
+                        bot.send_message(
+                            user.telegram_id,
+                            "Thank you for your feedback! For more detailed comments (at least 3 words) "
+                            "you can receive bonus article requests in the future."
+                        )
         
         # Запускаем сохранение в отдельном потоке
         threading.Thread(target=save_to_db, daemon=True).start()
@@ -578,7 +625,7 @@ def handle_feedback_comment(message):
     
     bot.send_message(
         message.chat.id,
-        "Thank you for your additional comments! Your feedback helps me improve.\n\n"
+        "Thank you for your comments! Your feedback helps me improve.\n\n"
         "Feel free to use /discussion anytime you want to practice English again."
     )
     
@@ -937,7 +984,8 @@ def handle_help(message):
 def handle_admin_feedback(message):
     """
     Обрабатывает команду /admin_feedback.
-    Эта команда доступна только администраторам и позволяет им получать отчет об обратной связи.
+    Эта команда доступна только администраторам и позволяет им получать отчет об обратной связи
+    прямо из базы данных.
     """
     user_id = message.from_user.id
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
@@ -955,87 +1003,103 @@ def handle_admin_feedback(message):
     
     bot.send_message(message.chat.id, "🔄 Получение данных обратной связи...")
     
+    # Получаем обратную связь непосредственно из базы данных
+    from models import db, Feedback, User
+    from main import app
+    
     try:
-        # Используем requests для запроса данных обратной связи из базы данных
-        api_urls = [
-            "http://localhost:5000/api/feedback",
-            "http://127.0.0.1:5000/api/feedback"
-        ]
-        
-        # Пробуем разные URL до первого успешного
-        response = None
-        last_error = None
-        success = False
-        
-        for url in api_urls:
-            try:
-                response = requests.get(url, timeout=3)
-                if response.status_code == 200:
-                    success = True
-                    break
-                else:
-                    last_error = f"Код: {response.status_code}"
-            except Exception as e:
-                last_error = str(e)
-                continue
-        
-        if not success:
-            bot.send_message(
-                message.chat.id,
-                f"⚠️ Не удалось получить данные обратной связи.\n\n"
-                f"API обратной связи недоступен. Проверьте, запущен ли веб-сервер.\n\n"
-                f"Техническая информация: {last_error}"
-            )
-            return
-        
-        feedback_data = response.json()
-        
-        if not feedback_data:
-            # Отправляем сообщение с информацией при отсутствии данных
+        with app.app_context():
+            # Получаем все записи обратной связи, упорядоченные по времени (последние сначала)
+            # Используем join для получения информации о пользователях
+            feedback_records = db.session.query(
+                Feedback, User.telegram_id, User.username, User.first_name, User.last_name
+            ).join(
+                User, User.id == Feedback.user_id
+            ).order_by(
+                Feedback.timestamp.desc()
+            ).all()
+            
+            if not feedback_records:
+                # Отправляем сообщение с информацией при отсутствии данных
+                bot.send_message(
+                    message.chat.id, 
+                    "📝 Данные обратной связи отсутствуют.\n\n"
+                    "Обратная связь появится здесь, когда пользователи завершат диалоги "
+                    "с ботом и оставят свои отзывы.\n\n"
+                    "Вы можете добавить тестовые данные с помощью скрипта add_test_feedback.py."
+                )
+                return
+            
+            # Формируем отчет
+            # Подсчитываем статистику рейтингов
+            rating_counts = {"helpful": 0, "okay": 0, "not_helpful": 0}
+            
+            for record, _, _, _, _ in feedback_records:
+                if record.rating in rating_counts:
+                    rating_counts[record.rating] += 1
+            
+            # Отправляем отчет администратору
+            report = "📊 *Отчет по обратной связи*\n\n"
+            report += f"👍 Полезно: {rating_counts['helpful']}\n"
+            report += f"🤔 Нормально: {rating_counts['okay']}\n"
+            report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
+            
+            # Добавляем последние 5 комментариев с подробной информацией
+            report += "*Последние комментарии:*\n"
+            comment_count = 0
+            
+            for record, telegram_id, username, first_name, last_name in feedback_records:
+                if record.comment:
+                    comment_count += 1
+                    
+                    # Формируем имя пользователя для отображения
+                    user_display = username or first_name or f"User {telegram_id}"
+                    
+                    # Преобразуем рейтинг в эмодзи
+                    rating_emoji = {
+                        "helpful": "👍",
+                        "okay": "🤔",
+                        "not_helpful": "👎"
+                    }.get(record.rating, "❓")
+                    
+                    # Дата в формате ДД.ММ.ГГГГ
+                    date_str = record.timestamp.strftime("%d.%m.%Y")
+                    
+                    # Экранируем специальные символы Markdown
+                    comment = record.comment.replace("*", "\\*").replace("_", "\\_").replace("`", "\\`")
+                    
+                    # Добавляем информацию о комментарии
+                    report += f"{comment_count}. {rating_emoji} *{user_display}* ({date_str}):\n"
+                    report += f"\"_{comment}_\"\n\n"
+                    
+                    if comment_count >= 5:
+                        break
+            
+            if comment_count == 0:
+                report += "_Комментариев пока нет._"
+            
+            # Общее количество отзывов
+            total_feedback = sum(rating_counts.values())
+            report += f"\n*Всего отзывов:* {total_feedback}"
+            
+            # Отправляем отчет с форматированием Markdown
             bot.send_message(
                 message.chat.id, 
-                "📝 Данные обратной связи отсутствуют.\n\n"
-                "Обратная связь появится здесь, когда пользователи завершат диалоги "
-                "с ботом и оставят свои отзывы.\n\n"
-                "Вы можете добавить тестовые данные с помощью скрипта add_test_feedback.py."
+                report,
+                parse_mode="Markdown"
             )
-            return
-        
-        # Формируем отчет
-        rating_counts = {"helpful": 0, "okay": 0, "not_helpful": 0}
-        
-        for item in feedback_data:
-            rating = item.get('rating')
-            if rating in rating_counts:
-                rating_counts[rating] += 1
-                
-        # Отправляем отчет администратору
-        report = "📊 Отчет по обратной связи\n\n"
-        report += f"👍 Полезно: {rating_counts['helpful']}\n"
-        report += f"🤔 Нормально: {rating_counts['okay']}\n"
-        report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
-        
-        # Добавляем последние 5 комментариев
-        report += "Последние комментарии:"
-        comment_count = 0
-        
-        for item in feedback_data:
-            if item.get('comment'):
-                comment_count += 1
-                report += f"\n{comment_count}. {item.get('rating', 'unknown')}: \"{item.get('comment')}\""
-                if comment_count >= 5:
-                    break
-                    
-        if comment_count == 0:
-            report += "\nКомментариев пока нет."
-        
-        # Отправляем отчет
-        bot.send_message(message.chat.id, report)
-        
+            
+            # Также даем ссылку на веб-интерфейс администратора
+            bot.send_message(
+                message.chat.id,
+                "Вы также можете просмотреть полную информацию на веб-панели: "
+                "http://localhost:5000/admin/feedback"
+            )
+            
     except Exception as e:
         bot.send_message(
             message.chat.id, 
-            f"Произошла ошибка при получении данных обратной связи: {str(e)}"
+            f"❌ Произошла ошибка при получении данных обратной связи: {str(e)}"
         )
         logger.error(f"Error in admin_feedback: {e}")
 
