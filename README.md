@@ -67,6 +67,29 @@ python run_telegram_bot.py
 gunicorn --bind 0.0.0.0:5000 main:app
 ```
 
+#### Деплой на GitHub Actions
+
+Бот настроен для автоматического деплоя через GitHub Actions. Для настройки:
+
+1. Форкните репозиторий на GitHub
+2. В настройках репозитория добавьте секреты:
+   - `TELEGRAM_TOKEN` - токен вашего Telegram бота
+   - `DATABASE_URL` - URL для подключения к PostgreSQL
+   - `OPENROUTER_API_KEY` - ключ для OpenRouter API
+
+3. Активируйте GitHub Actions в разделе "Actions" вашего репозитория
+4. При каждом пуше в ветку main бот будет автоматически задеплоен
+
+#### Деплой на другие сервисы
+
+Бот можно развернуть на любой платформе, поддерживающей Python:
+- Heroku
+- PythonAnywhere
+- Railway
+- Fly.io
+- DigitalOcean
+- Любой VPS с установленным Python
+
 ## Команды бота
 
 - `/start` - Начать взаимодействие с ботом и получить информацию о возможностях
