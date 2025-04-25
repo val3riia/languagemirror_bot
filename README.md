@@ -43,8 +43,14 @@
 4. Отредактируйте `.env` файл, добавив следующие переменные:
    ```
    TELEGRAM_TOKEN=your_telegram_bot_token
-   OPENROUTER_API_KEY=your_openrouter_api_key  # опционально
-   DATABASE_URL=postgresql://user:password@localhost:5432/language_mirror  # опционально
+   
+   # Настройки администратора
+   ADMIN_USERNAME=your_admin_username
+   ADMIN_USER_ID=your_admin_user_id
+   
+   # Опциональные настройки
+   OPENROUTER_API_KEY=your_openrouter_api_key  # для AI функций
+   DATABASE_URL=postgresql://user:password@localhost:5432/language_mirror  # для базы данных
    ```
 
 ### Запуск бота
@@ -74,8 +80,10 @@ gunicorn --bind 0.0.0.0:5000 main:app
 1. Форкните репозиторий на GitHub
 2. В настройках репозитория добавьте секреты:
    - `TELEGRAM_TOKEN` - токен вашего Telegram бота
-   - `DATABASE_URL` - URL для подключения к PostgreSQL
-   - `OPENROUTER_API_KEY` - ключ для OpenRouter API
+   - `ADMIN_USERNAME` - имя пользователя администратора
+   - `ADMIN_USER_ID` - ID пользователя администратора
+   - `DATABASE_URL` - URL для подключения к PostgreSQL (опционально)
+   - `OPENROUTER_API_KEY` - ключ для OpenRouter API (опционально)
 
 3. Активируйте GitHub Actions в разделе "Actions" вашего репозитория
 4. При каждом пуше в ветку main бот будет автоматически задеплоен
@@ -119,7 +127,11 @@ gunicorn --bind 0.0.0.0:5000 main:app
 Чтобы получить доступ к административным функциям:
 
 1. Отправьте команду `/start` боту [@userinfobot](https://t.me/userinfobot) для получения вашего Telegram ID
-2. Добавьте ваш ID в список `admin_ids` в файле `language_mirror_telebot.py`
+2. Добавьте ваше имя пользователя и ID в переменные окружения:
+   ```
+   ADMIN_USERNAME=your_username
+   ADMIN_USER_ID=your_user_id
+   ```
 3. Перезапустите бота
 4. Теперь вы можете использовать команду `/admin_feedback` для получения отчетов
 

@@ -211,13 +211,16 @@ def handle_start(message):
     markup.add(start_button)
     markup.add(discussion_button, stop_button)
     
-    # Проверяем, является ли пользователь администратором (только avr3lia)
+    # Проверяем, является ли пользователь администратором
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
-    if username == "avr3lia":
-        # Добавляем кнопку администратора
+    user_id = message.from_user.id
+    is_admin = username in ADMIN_USERS and user_id == ADMIN_USERS.get(username, 0)
+    
+    # Добавляем кнопку администратора для уполномоченных пользователей
+    if is_admin or user_id == FORCE_ADMIN_ID:
         admin_button = types.KeyboardButton('/admin_feedback')
         markup.add(admin_button)
-        logger.info(f"Добавлена кнопка администратора для пользователя {username}")
+        logger.info(f"Добавлена кнопка администратора для пользователя {username} (ID: {user_id})")
         
     # Формируем приветственное сообщение
     welcome_text = f"Hello {user_name}! 👋\n\n"
@@ -1028,13 +1031,13 @@ def handle_admin_feedback(message):
         is_admin = True
         logger.info(f"Администратор авторизован по фиксированному ID: {user_id}")
     
-    # Проверяем по имени пользователя
-    elif username == "avr3lia":
+    # Проверяем по имени пользователя из переменных окружения
+    elif username and username in ADMIN_USERS:
         is_admin = True
         logger.info(f"Администратор {username} авторизован по имени")
     
     # Проверяем по ID из словаря администраторов
-    elif user_id == ADMIN_USERS.get("avr3lia", 0):
+    elif user_id and ADMIN_USERS and user_id in ADMIN_USERS.values():
         is_admin = True
         logger.info(f"Администратор авторизован по ID из списка: {user_id}")
     
