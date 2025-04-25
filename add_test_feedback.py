@@ -144,15 +144,16 @@ def main():
         print("Установите URL базы данных PostgreSQL в переменных окружения")
         sys.exit(1)
     
-    # Спрашиваем количество отзывов для добавления
-    try:
-        count_input = input("Сколько тестовых отзывов вы хотите добавить? (по умолчанию: 10): ")
-        count = int(count_input) if count_input.strip() else 10
-    except ValueError:
-        print("Введено некорректное значение, будет использовано значение по умолчанию (10)")
-        count = 10
+    # Используем значение по умолчанию без ввода пользователя
+    count = 10
+    if len(sys.argv) > 1:
+        try:
+            count = int(sys.argv[1])
+        except ValueError:
+            print(f"Некорректное значение в аргументе командной строки: {sys.argv[1]}")
+            print("Будет использовано значение по умолчанию (10)")
     
-    print(f"\nДобавление {count} тестовых отзывов...")
+    print(f"Добавление {count} тестовых отзывов...")
     created_count = add_test_feedback(count)
     
     if created_count > 0:
