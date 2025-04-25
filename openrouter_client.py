@@ -16,7 +16,7 @@ class OpenRouterClient:
             logging.warning("OPENROUTER_API_KEY environment variable is not set")
         
         self.api_base = "https://openrouter.ai/api/v1"
-        self.model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-mini-search-preview")
+        self.model = os.environ.get("OPENROUTER_MODEL", "openai/gpt-4o-search-preview")
         
         # Set up logging
         self.logger = logging.getLogger(__name__)
@@ -49,11 +49,12 @@ class OpenRouterClient:
         payload = {
             "model": self.model,
             "messages": formatted_messages,
-            "temperature": 0.9,
-            "max_tokens": 500,
-            "top_p": 1,
+            "temperature": 0.7,
+            "max_tokens": 250,
+            "top_p": 0.9,
+            "frequency_penalty": 0.4, 
             "presence_penalty": 0.6,
-            "frequency_penalty": 0
+            "stop": ["User:", "Assistant:", "\n\n"]
         }
         
         try:
