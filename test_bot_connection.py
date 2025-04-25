@@ -1,186 +1,111 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
-Скрипт для проверки возможности подключения к Telegram API.
+Скрипт для проверки соединения с ботом Telegram.
+Отправляет запрос к API Telegram, чтобы проверить, что бот подключен и работает.
 """
-
-import os
-import sys
-import time
 import logging
+import os
 import requests
+import sys
 
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.DEBUG
+    level=logging.INFO
 )
 logger = logging.getLogger(__name__)
 
-def check_telegram_api():
-    """Проверяет подключение к Telegram API используя getMe."""
-    
-    # Получаем токен из переменных окружения
+def check_bot_connection():
+    """Проверяет подключение к боту Telegram"""
     token = os.environ.get("TELEGRAM_TOKEN")
     if not token:
-        logger.error("TELEGRAM_TOKEN не установлен")
+        logger.error("TELEGRAM_TOKEN не найден в переменных окружения")
         return False
     
-    # Формируем URL для запроса getMe
-    api_url = f"https://api.telegram.org/bot{token}/getMe"
-    
+    logger.info("Проверяем подключение к боту Telegram...")
     try:
-        # Отправляем запрос к API
-        logger.info(f"Отправка запроса к {api_url}...")
-        response = requests.get(api_url, timeout=10)
+        # Отправляем запрос к методу getMe для проверки соединения
+        response = requests.get(f"https://api.telegram.org/bot{token}/getMe")
+        data = response.json()
         
-        # Проверяем ответ
-        if response.status_code == 200:
-            result = response.json()
-            logger.info(f"Ответ API: {result}")
+        if data.get("ok", False):
+            bot_info = data.get("result", {})
+            bot_username = bot_info.get("username", "Unknown")
+            bot_id = bot_info.get("id", "Unknown")
             
-            if result.get("ok"):
-                bot_info = result.get("result", {})
-                bot_username = bot_info.get("username")
-                logger.info(f"✅ Успешное подключение к боту @{bot_username}")
-                return True
-            else:
-                logger.error(f"❌ API вернул ошибку: {result}")
+            logger.info(f"Подключение установлено успешно!")
+            logger.info(f"Имя бота: @{bot_username}")
+            logger.info(f"ID бота: {bot_id}")
+            return True
         else:
-            logger.error(f"❌ Ошибка запроса: Код {response.status_code}")
-            logger.error(f"Ответ: {response.text}")
-    
+            error_description = data.get("description", "Неизвестная ошибка")
+            logger.error(f"Ошибка при подключении к боту: {error_description}")
+            return False
     except Exception as e:
-        logger.error(f"❌ Исключение при запросе к API: {e}")
-    
-    return False
-
-def check_webhook_status():
-    """Проверяет текущий статус webhook и удаляет его при необходимости."""
-    
-    # Получаем токен из переменных окружения
-    token = os.environ.get("TELEGRAM_TOKEN")
-    if not token:
-        logger.error("TELEGRAM_TOKEN не установлен")
+        logger.error(f"Ошибка при проверке подключения: {e}")
         return False
-    
-    # URL для проверки информации о webhook
-    api_url = f"https://api.telegram.org/bot{token}/getWebhookInfo"
+
+def check_bot_process():
+    """Проверяет, запущен ли процесс бота"""
+    logger.info("Проверяем, запущен ли процесс бота...")
     
     try:
-        # Отправляем запрос для получения информации о webhook
-        logger.info("Проверка статуса webhook...")
-        response = requests.get(api_url, timeout=10)
-        
-        # Проверяем ответ
-        if response.status_code == 200:
-            result = response.json()
-            
-            if result.get("ok"):
-                webhook_info = result.get("result", {})
-                webhook_url = webhook_info.get("url")
+        # Проверяем наличие файла с PID
+        if os.path.exists("bot.pid"):
+            with open("bot.pid", "r") as file:
+                pid = file.read().strip()
                 
-                if webhook_url:
-                    logger.warning(f"⚠️ Обнаружен webhook: {webhook_url}")
-                    
-                    # Удаляем webhook
-                    delete_url = f"https://api.telegram.org/bot{token}/deleteWebhook"
-                    logger.info("Удаление webhook...")
-                    
-                    delete_response = requests.get(delete_url, timeout=10)
-                    if delete_response.status_code == 200 and delete_response.json().get("ok"):
-                        logger.info("✅ Webhook успешно удален")
+                if pid:
+                    # Проверяем, существует ли процесс с этим PID
+                    try:
+                        os.kill(int(pid), 0)  # Не убивает процесс, просто проверяет его существование
+                        logger.info(f"Процесс бота запущен (PID: {pid})")
                         return True
-                    else:
-                        logger.error(f"❌ Ошибка при удалении webhook: {delete_response.text}")
+                    except OSError:
+                        logger.warning(f"Процесс с PID {pid} не найден, хотя файл bot.pid существует")
                         return False
                 else:
-                    logger.info("✅ Webhook не установлен")
-                    return True
-            else:
-                logger.error(f"❌ API вернул ошибку: {result}")
+                    logger.warning("Файл bot.pid пуст")
+                    return False
         else:
-            logger.error(f"❌ Ошибка запроса: Код {response.status_code}")
-            logger.error(f"Ответ: {response.text}")
-    
-    except Exception as e:
-        logger.error(f"❌ Исключение при запросе к API: {e}")
-    
-    return False
-
-def send_test_message():
-    """Отправляет тестовое сообщение для проверки работы бота."""
-    
-    # Получаем токен из переменных окружения
-    token = os.environ.get("TELEGRAM_TOKEN")
-    if not token:
-        logger.error("TELEGRAM_TOKEN не установлен")
-        return False
-
-    # ID администратора или группы для тестирования
-    chat_id = 5783753055  # ID пользователя avr3lia
-    
-    # URL для отправки сообщения
-    api_url = f"https://api.telegram.org/bot{token}/sendMessage"
-    
-    # Данные для запроса
-    data = {
-        "chat_id": chat_id,
-        "text": "🧪 Тестовое сообщение от бота Language Mirror\n\n" 
-                "Это сообщение отправлено автоматически для проверки работоспособности "
-                "бота и его подключения к Telegram API.\n\n"
-                f"Время отправки: {time.strftime('%Y-%m-%d %H:%M:%S')}"
-    }
-    
-    try:
-        # Отправляем запрос к API
-        logger.info(f"Отправка тестового сообщения пользователю {chat_id}...")
-        response = requests.post(api_url, data=data, timeout=10)
-        
-        # Проверяем ответ
-        if response.status_code == 200:
-            result = response.json()
+            logger.warning("Файл bot.pid не найден")
             
-            if result.get("ok"):
-                logger.info("✅ Тестовое сообщение успешно отправлено")
+            # Альтернативный способ проверки
+            import subprocess
+            output = subprocess.check_output(["pgrep", "-f", "run_telegram_bot.py"]).decode().strip()
+            
+            if output:
+                pids = output.split('\n')
+                logger.info(f"Найдены процессы бота: {', '.join(pids)}")
                 return True
             else:
-                logger.error(f"❌ API вернул ошибку: {result}")
-        else:
-            logger.error(f"❌ Ошибка запроса: Код {response.status_code}")
-            logger.error(f"Ответ: {response.text}")
-    
+                logger.warning("Процессы бота не найдены через pgrep")
+                return False
     except Exception as e:
-        logger.error(f"❌ Исключение при отправке сообщения: {e}")
-    
-    return False
+        logger.error(f"Ошибка при проверке процесса бота: {e}")
+        return False
 
 def main():
-    """Основная функция скрипта."""
-    print("🔍 Проверка подключения к Telegram API...")
+    """Основная функция"""
+    logger.info("=== Проверка соединения с ботом Telegram ===")
     
-    # Проверяем возможность подключения к API
-    if not check_telegram_api():
-        print("❌ Ошибка подключения к Telegram API")
-        print("Возможные причины:")
-        print("1. Некорректный токен TELEGRAM_TOKEN")
-        print("2. Проблемы с сетевым подключением")
-        print("3. Блокировка API Telegram на стороне сервера")
-        sys.exit(1)
+    # Проверяем, запущен ли процесс бота
+    process_running = check_bot_process()
     
-    # Проверяем и удаляем webhook при необходимости
-    if not check_webhook_status():
-        print("❌ Ошибка при проверке/удалении webhook")
-        sys.exit(1)
+    # Проверяем подключение к боту
+    connection_ok = check_bot_connection()
     
-    # Отправляем тестовое сообщение
-    if send_test_message():
-        print("✅ Тестовое сообщение успешно отправлено администратору")
-        print("Бот подключен и работает правильно")
+    # Выводим итоговый статус
+    print("\n=== Итоговый статус бота ===")
+    print(f"Процесс бота запущен: {'ДА' if process_running else 'НЕТ'}")
+    print(f"Подключение к Telegram API: {'ДА' if connection_ok else 'НЕТ'}")
+    
+    if process_running and connection_ok:
+        print("\nБот работает нормально!")
+        return 0
     else:
-        print("❌ Ошибка при отправке тестового сообщения")
-        print("Проверьте логи для получения подробной информации")
+        print("\nОбнаружены проблемы в работе бота!")
+        print("Рекомендуется перезапустить бота с помощью команды: ./start_bot_stable.sh")
+        return 1
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
