@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 from models import db, User, Session, Message, Feedback
 
 # Create Flask app
-app = Flask(__name__)
+app = Flask(__name__, static_url_path='/static', static_folder='static')
 
 # Configure database
 database_url = os.environ.get("DATABASE_URL")
