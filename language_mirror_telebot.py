@@ -182,11 +182,13 @@ def handle_start(message):
     
     # Создаем клавиатуру с командами
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
-    start_button = types.KeyboardButton('/discussion')
+    start_button = types.KeyboardButton('/start')
+    discussion_button = types.KeyboardButton('/discussion')
     stop_button = types.KeyboardButton('/stop_discussion')
     
     # Добавляем основные кнопки
-    markup.add(start_button, stop_button)
+    markup.add(start_button)
+    markup.add(discussion_button, stop_button)
     
     # Проверяем, является ли пользователь администратором (только avr3lia)
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
@@ -248,9 +250,11 @@ def handle_discussion(message):
     
     # Ищем пользователя в базе данных
     from models import db, User
+    from main import app
     user_record = None
     
-    with db.session.no_autoflush:
+    # Создаем контекст приложения Flask
+    with app.app_context():
         user_record = User.query.filter_by(telegram_id=user_id).first()
         
         if not user_record:
@@ -290,13 +294,13 @@ def handle_discussion(message):
                     "You've already used your article recommendation today! Come back tomorrow for more inspiring content."
                 )
                 return
-    
-    # Если пользователь здесь, значит либо у него нет ограничений, либо он новый
-    # Обновляем дату последнего запроса и увеличиваем счетчик
-    if user_record:
-        user_record.last_discussion_date = today
-        user_record.discussions_count = (user_record.discussions_count or 0) + 1
-        db.session.commit()
+        
+        # Если пользователь здесь, значит либо у него нет ограничений, либо он новый
+        # Обновляем дату последнего запроса и увеличиваем счетчик
+        if user_record:
+            user_record.last_discussion_date = today
+            user_record.discussions_count = (user_record.discussions_count or 0) + 1
+            db.session.commit()
     
     # Создаем клавиатуру для выбора уровня языка
     markup = types.InlineKeyboardMarkup()
@@ -404,9 +408,11 @@ def handle_feedback_bonus(call):
     # Пользователь хочет получить бонус
     # Обновляем информацию о пользователе в базе данных
     from models import db, User
+    from main import app
     user_record = None
     
-    with db.session.no_autoflush:
+    # Создаем контекст приложения Flask
+    with app.app_context():
         user_record = User.query.filter_by(telegram_id=user_id).first()
         
         if user_record and not user_record.feedback_bonus_used:
@@ -414,28 +420,29 @@ def handle_feedback_bonus(call):
             user_record.feedback_bonus_used = True
             db.session.commit()
             
-            # Показываем клавиатуру выбора уровня языка
-            markup = types.InlineKeyboardMarkup()
-            for level, description in LANGUAGE_LEVELS.items():
-                markup.add(types.InlineKeyboardButton(
-                    f"{level} - {description}", 
-                    callback_data=f"level_{level}"
-                ))
-            
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text="Thanks for your interest in providing feedback! You've received a bonus request for articles today.\n\n"
-                "Before we begin, I'd like to know your English proficiency level so I can adapt to your needs. Please select your level:",
-                reply_markup=markup
-            )
-        else:
-            # Пользователь уже использовал бонус или не найден в базе
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text="Sorry, it seems you've already used your bonus request or there was an error. Please try again tomorrow."
-            )
+    # Показываем клавиатуру выбора уровня языка, выносим это за контекст приложения
+    if user_record:
+        markup = types.InlineKeyboardMarkup()
+        for level, description in LANGUAGE_LEVELS.items():
+            markup.add(types.InlineKeyboardButton(
+                f"{level} - {description}", 
+                callback_data=f"level_{level}"
+            ))
+        
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Thanks for providing feedback! You've received a bonus request for articles today.\n\n"
+            "Before we begin, I'd like to know your English proficiency level so I can adapt to your needs. Please select your level:",
+            reply_markup=markup
+        )
+    else:
+        # Пользователь не найден в базе
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="Sorry, there was an error processing your request. Please try again later."
+        )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not (call.data == "feedback_bonus" or call.data == "feedback_skip"))
 def handle_feedback(call):
@@ -525,7 +532,7 @@ def handle_feedback_comment(message):
         "unknown": "Rating not provided"
     }
     
-    # Сохраняем обратную связь в базу данных, если доступна
+    # Сохраняем обратную связь в базу данных через API
     try:
         # Пытаемся отправить HTTP запрос для сохранения обратной связи в БД
         feedback_data = {
@@ -540,6 +547,29 @@ def handle_feedback_comment(message):
             target=lambda: requests.post("http://localhost:5000/api/feedback", json=feedback_data),
             daemon=True
         ).start()
+        
+        # Также сохраняем обратную связь напрямую в БД через SQLAlchemy
+        from models import db, User, Feedback
+        from main import app
+        
+        # Выполняем в отдельном потоке, чтобы не блокировать бота
+        def save_to_db():
+            with app.app_context():
+                # Ищем пользователя по id
+                user = User.query.filter_by(telegram_id=user_id).first()
+                
+                if user:
+                    # Создаем запись обратной связи
+                    new_feedback = Feedback(
+                        user_id=user.id,
+                        rating=feedback_type,
+                        comment=comment
+                    )
+                    db.session.add(new_feedback)
+                    db.session.commit()
+        
+        # Запускаем сохранение в отдельном потоке
+        threading.Thread(target=save_to_db, daemon=True).start()
     except Exception as e:
         logger.error(f"Error saving feedback to database: {e}")
     
