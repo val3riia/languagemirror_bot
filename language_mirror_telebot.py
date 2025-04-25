@@ -267,7 +267,8 @@ def handle_language_level(call):
         "language_level": level,
         "username": call.from_user.username,
         "first_name": call.from_user.first_name,
-        "last_name": call.from_user.last_name
+        "last_name": call.from_user.last_name,
+        "mode": "articles" # Устанавливаем новый режим для поиска статей
     }
     
     # Инициализируем сессию пользователя
@@ -279,19 +280,15 @@ def handle_language_level(call):
         user_sessions[user_id] = {
             "language_level": level,
             "messages": [],
-            "last_active": time.time()
+            "last_active": time.time(),
+            "mode": "articles"
         }
     
-    # Предлагаем тему на основе уровня
-    topics = CONVERSATION_TOPICS.get(level, CONVERSATION_TOPICS["B1"])
-    suggested_topic = random.choice(topics)
-    
+    # Запрашиваем тему у пользователя для поиска статей
     bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
-        text=f"Great! I'll adapt to your {level} level. Let's start our conversation!\n\n"
-        f"Here's a suggestion: {suggested_topic}\n\n"
-        "But feel free to talk about anything that interests you!"
+        text=f"Great! I'll adapt to your {level} level.\n\nNow tell me — what topic is on your mind today? What would you like to explore?"
     )
 
 @bot.message_handler(commands=['stop_discussion'])
@@ -453,6 +450,101 @@ def handle_feedback_comment(message):
     elif user_id in user_sessions:
         del user_sessions[user_id]
 
+def find_articles_by_topic(topic: str, language_level: str) -> list:
+    """
+    Использует OpenRouter API для поиска релевантных статей по заданной теме.
+    
+    Args:
+        topic: Тема для поиска статей
+        language_level: Уровень владения языком пользователя (A1-C2)
+        
+    Returns:
+        Список словарей с информацией о статьях (title, url)
+    """
+    try:
+        # Получаем клиент OpenRouter API
+        if 'openrouter_client' in globals() and openrouter_client is not None:
+            system_message = f"""You are a helpful assistant that finds relevant English articles for language learners. 
+The user's English level is {language_level}. Generate 3 specific, diverse, and credible article recommendations about the topic.
+Respond with exactly 3 articles, no more, no less.
+Format your response as a JSON array with "title" and "url" for each article. Generate real URLs to existing English articles.
+Each article should be from a different source. Focus on educational, news, or blog articles that would be interesting and appropriate 
+for an English learner at the {language_level} level."""
+
+            # Создаем запрос для поиска статей
+            response = openrouter_client.get_completion(
+                system_message=system_message,
+                messages=[
+                    {"role": "user", "content": f"Please recommend 3 good articles about '{topic}' for me to read and improve my English."}
+                ]
+            )
+            
+            # Пробуем распарсить JSON ответ
+            try:
+                # Вначале пытаемся распарсить как есть
+                articles_data = json.loads(response)
+            except:
+                # Если не удалось, ищем JSON в тексте ответа
+                import re
+                json_match = re.search(r'\[.*\]', response, re.DOTALL)
+                if json_match:
+                    try:
+                        articles_data = json.loads(json_match.group(0))
+                    except:
+                        # Если и это не сработало, создаем дефолтные статьи
+                        return default_articles_for_topic(topic)
+                else:
+                    return default_articles_for_topic(topic)
+            
+            # Проверяем корректность формата
+            if isinstance(articles_data, list) and len(articles_data) > 0:
+                # Убеждаемся, что у нас ровно 3 статьи
+                articles = articles_data[:3]
+                if len(articles) < 3:
+                    # Дополняем до 3
+                    default = default_articles_for_topic(topic)
+                    articles.extend(default[len(articles):])
+                return articles
+            else:
+                return default_articles_for_topic(topic)
+                
+        else:
+            # Если клиент не доступен, используем стандартные статьи
+            return default_articles_for_topic(topic)
+            
+    except Exception as e:
+        logger.error(f"Error finding articles: {e}")
+        # Возвращаем дефолтные статьи при ошибке
+        return default_articles_for_topic(topic)
+
+def default_articles_for_topic(topic: str) -> list:
+    """
+    Создает стандартный набор статей по теме при недоступности API.
+    
+    Args:
+        topic: Тема для статей
+        
+    Returns:
+        Список словарей с информацией о статьях
+    """
+    # Преобразуем тему для URL
+    topic_slug = topic.lower().replace(' ', '-')
+    
+    return [
+        {
+            "title": f"Understanding {topic}: A Comprehensive Guide",
+            "url": f"https://en.wikipedia.org/wiki/{topic_slug}"
+        },
+        {
+            "title": f"The Complete Introduction to {topic}",
+            "url": f"https://www.britannica.com/search?query={topic_slug}"
+        },
+        {
+            "title": f"5 Ways to Master {topic} Quickly",
+            "url": f"https://www.bbc.com/news/topics/{topic_slug}"
+        }
+    ]
+
 def generate_learning_response(user_message: str, language_level: str, conversation_history=None) -> str:
     """
     Генерирует ответ для обучения языку на основе сообщения пользователя и уровня.
@@ -600,6 +692,7 @@ def handle_all_messages(message):
     # Проверяем, есть ли у пользователя активная сессия
     session_exists = False
     language_level = "B1"  # Значение по умолчанию
+    session_mode = "conversation"  # Режим по умолчанию - обычная беседа
     
     if 'session_manager' in globals():
         # Проверка через менеджер сессий с БД
@@ -607,10 +700,12 @@ def handle_all_messages(message):
         if session and "language_level" in session:
             session_exists = True
             language_level = session.get("language_level", "B1")
+            session_mode = session.get("mode", "conversation")
     elif user_id in user_sessions and "language_level" in user_sessions[user_id]:
         # Проверка через старую систему хранения в памяти
         session_exists = True
         language_level = user_sessions[user_id].get("language_level", "B1")
+        session_mode = user_sessions[user_id].get("mode", "conversation")
     
     if not session_exists:
         bot.send_message(
@@ -633,24 +728,65 @@ def handle_all_messages(message):
         user_sessions[user_id]["messages"].append({"role": "user", "content": user_message})
         user_sessions[user_id]["last_active"] = time.time()
     
-    # Получаем историю сообщений для контекста
-    conversation_history = []
-    if 'session_manager' in globals():
-        conversation_history = session_manager.get_messages(user_id)
-    elif user_id in user_sessions and "messages" in user_sessions[user_id]:
-        conversation_history = user_sessions[user_id]["messages"]
-    
-    # Генерируем ответ на основе сообщения пользователя и истории
-    response = generate_learning_response(user_message, language_level, conversation_history)
-    
-    # Сохраняем ответ бота в сессии
-    if 'session_manager' in globals():
-        session_manager.add_message_to_session(user_id, "assistant", response)
+    # Проверяем режим сессии
+    if session_mode == "articles":
+        # Режим статей - пользователь ввел тему для поиска статей
+        topic = user_message
+        
+        # Используем OpenRouter API для поиска статей по теме
+        articles = find_articles_by_topic(topic, language_level)
+        
+        # Формируем ответ со списком статей
+        articles_text = f"Here are some great pieces to reflect on your topic – \"{topic}\":\n\n"
+        for i, article in enumerate(articles, 1):
+            articles_text += f"{i}. [{article['title']}]({article['url']})\n"
+        
+        # Формируем клавиатуру для обратной связи
+        markup = types.InlineKeyboardMarkup(row_width=3)
+        markup.add(
+            types.InlineKeyboardButton("👍 Useful", callback_data="feedback_helpful"),
+            types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
+            types.InlineKeyboardButton("👎 Not really", callback_data="feedback_not_helpful")
+        )
+        
+        # Отправляем ответ со статьями и завершаем беседу
+        bot.send_message(message.chat.id, articles_text, parse_mode="Markdown")
+        bot.send_message(
+            message.chat.id,
+            "Hope that gave you something to think about! Want to explore another topic? Just type /discussion.\n\nHow was that for you?",
+            reply_markup=markup
+        )
+        
+        # Заканчиваем сессию
+        if 'session_manager' in globals():
+            session_manager.end_session(user_id)
+        else:
+            if user_id in user_sessions:
+                # Сохраняем только информацию для получения обратной связи
+                user_sessions[user_id] = {
+                    "last_active": time.time(),
+                    "waiting_for_feedback": True
+                }
     else:
-        user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
-    
-    # Отправляем ответ пользователю
-    bot.send_message(message.chat.id, response)
+        # Стандартный режим разговора
+        # Получаем историю сообщений для контекста
+        conversation_history = []
+        if 'session_manager' in globals():
+            conversation_history = session_manager.get_messages(user_id)
+        elif user_id in user_sessions and "messages" in user_sessions[user_id]:
+            conversation_history = user_sessions[user_id]["messages"]
+        
+        # Генерируем ответ на основе сообщения пользователя и истории
+        response = generate_learning_response(user_message, language_level, conversation_history)
+        
+        # Сохраняем ответ бота в сессии
+        if 'session_manager' in globals():
+            session_manager.add_message_to_session(user_id, "assistant", response)
+        else:
+            user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
+        
+        # Отправляем ответ пользователю
+        bot.send_message(message.chat.id, response)
 
 # При необходимости переадресуем /help на /start для совместимости
 @bot.message_handler(commands=['help'])

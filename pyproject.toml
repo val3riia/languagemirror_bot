@@ -16,5 +16,6 @@ dependencies = [
     "requests>=2.32.3",
     "sqlalchemy>=2.0.40",
     "telegram>=0.0.1",
+    "trafilatura>=2.0.0",
     "werkzeug>=3.1.3",
 ]
