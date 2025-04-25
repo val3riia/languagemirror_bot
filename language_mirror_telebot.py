@@ -200,16 +200,18 @@ def handle_start(message):
     welcome_text = f"Hello {user_name}! 👋\n\n"
     welcome_text += "I'm Language Mirror, an AI assistant that helps you learn English through topics "
     welcome_text += "that genuinely interest you – your thoughts, experiences, and feelings.\n\n"
-    welcome_text += "🔹 Функции бота:\n\n"
-    welcome_text += "• Разговорная практика - общайтесь со мной на любые темы, чтобы улучшить свой английский\n"
-    welcome_text += "• Адаптация к уровню - я подстраиваюсь под ваш уровень владения языком (от A1 до C2)\n"
-    welcome_text += "• Корректировка ошибок - я мягко исправляю ваши ошибки, помогая улучшить языковые навыки\n"
-    welcome_text += "• Персонализированные темы - я предлагаю темы для обсуждения, основываясь на вашем уровне\n"
-    welcome_text += "• Обратная связь - после завершения разговора вы можете оставить отзыв\n\n"
-    welcome_text += "🔹 Основные команды:\n\n"
-    welcome_text += "• /discussion - начать обсуждение на английском\n"
-    welcome_text += "• /stop_discussion - завершить текущее обсуждение\n\n"
-    welcome_text += "Используйте кнопки ниже или введите команду вручную, чтобы начать!"
+    welcome_text += "🔹 Bot Features:\n\n"
+    welcome_text += "• Conversation Practice - chat with me on any topic to improve your English\n"
+    welcome_text += "• Level Adaptation - I adjust to your language proficiency (from A1 to C2)\n"
+    welcome_text += "• Error Correction - I gently correct your mistakes to help you improve\n"
+    welcome_text += "• Personalized Topics - I suggest discussion topics based on your level\n"
+    welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n"
+    welcome_text += "• Feedback System - provide feedback after conversations to help improve the bot\n\n"
+    welcome_text += "🔹 Main Commands:\n\n"
+    welcome_text += "• /start - show this welcome message\n"
+    welcome_text += "• /discussion - start an English conversation or get article recommendations (1 request per day)\n"
+    welcome_text += "• /stop_discussion - end the current conversation\n\n"
+    welcome_text += "Use the buttons below or type a command to get started!"
     
     # Отправляем сообщение
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
@@ -239,6 +241,62 @@ def handle_discussion(message):
                 "use /stop_discussion to end our current conversation."
             )
             return
+    
+    # Проверяем лимит на количество запросов в день
+    from datetime import date
+    today = date.today()
+    
+    # Ищем пользователя в базе данных
+    from models import db, User
+    user_record = None
+    
+    with db.session.no_autoflush:
+        user_record = User.query.filter_by(telegram_id=user_id).first()
+        
+        if not user_record:
+            # Создаем новую запись пользователя, если его нет в базе
+            user_record = User(
+                telegram_id=user_id,
+                username=message.from_user.username,
+                first_name=message.from_user.first_name,
+                last_name=message.from_user.last_name
+            )
+            db.session.add(user_record)
+            db.session.commit()
+            
+            # Пользователь новый, продолжаем без ограничений
+            pass
+        elif user_record.last_discussion_date == today:
+            # Проверяем, использовал ли пользователь бонус за обратную связь
+            if not user_record.feedback_bonus_used:
+                # Предлагаем бонус-запрос за фидбек, если пользователь его еще не получал
+                markup = types.InlineKeyboardMarkup()
+                markup.add(
+                    types.InlineKeyboardButton("👍 Get Bonus Request", callback_data="feedback_bonus"),
+                    types.InlineKeyboardButton("❌ No Thanks", callback_data="feedback_skip")
+                )
+                
+                bot.send_message(
+                    message.chat.id,
+                    "You've already used your article recommendation today!\n\n"
+                    "Would you like to get a bonus request by providing feedback about our bot?",
+                    reply_markup=markup
+                )
+                return
+            else:
+                # Пользователь уже использовал дневной лимит и бонус
+                bot.send_message(
+                    message.chat.id,
+                    "You've already used your article recommendation today! Come back tomorrow for more inspiring content."
+                )
+                return
+    
+    # Если пользователь здесь, значит либо у него нет ограничений, либо он новый
+    # Обновляем дату последнего запроса и увеличиваем счетчик
+    if user_record:
+        user_record.last_discussion_date = today
+        user_record.discussions_count = (user_record.discussions_count or 0) + 1
+        db.session.commit()
     
     # Создаем клавиатуру для выбора уровня языка
     markup = types.InlineKeyboardMarkup()
@@ -329,7 +387,57 @@ def handle_stop_discussion(message):
         reply_markup=markup
     )
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_'))
+@bot.callback_query_handler(func=lambda call: call.data == "feedback_bonus" or call.data == "feedback_skip")
+def handle_feedback_bonus(call):
+    """Обрабатывает запрос на бонусный запрос статей за обратную связь."""
+    user_id = call.from_user.id
+    
+    if call.data == "feedback_skip":
+        # Пользователь отказался от бонуса
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="No problem! Come back tomorrow for your next article recommendation."
+        )
+        return
+    
+    # Пользователь хочет получить бонус
+    # Обновляем информацию о пользователе в базе данных
+    from models import db, User
+    user_record = None
+    
+    with db.session.no_autoflush:
+        user_record = User.query.filter_by(telegram_id=user_id).first()
+        
+        if user_record and not user_record.feedback_bonus_used:
+            # Обновляем флаг использования бонуса
+            user_record.feedback_bonus_used = True
+            db.session.commit()
+            
+            # Показываем клавиатуру выбора уровня языка
+            markup = types.InlineKeyboardMarkup()
+            for level, description in LANGUAGE_LEVELS.items():
+                markup.add(types.InlineKeyboardButton(
+                    f"{level} - {description}", 
+                    callback_data=f"level_{level}"
+                ))
+            
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="Thanks for your interest in providing feedback! You've received a bonus request for articles today.\n\n"
+                "Before we begin, I'd like to know your English proficiency level so I can adapt to your needs. Please select your level:",
+                reply_markup=markup
+            )
+        else:
+            # Пользователь уже использовал бонус или не найден в базе
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text="Sorry, it seems you've already used your bonus request or there was an error. Please try again tomorrow."
+            )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not (call.data == "feedback_bonus" or call.data == "feedback_skip"))
 def handle_feedback(call):
     """Обрабатывает обратную связь пользователя."""
     user_id = call.from_user.id

@@ -17,6 +17,9 @@ class User(db.Model):
     language_level = db.Column(db.String(10), nullable=True)  # A1, A2, B1, B2, C1, C2
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_activity = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    last_discussion_date = db.Column(db.Date, nullable=True)  # Дата последнего запроса /discussion
+    discussions_count = db.Column(db.Integer, default=0)  # Количество использований /discussion
+    feedback_bonus_used = db.Column(db.Boolean, default=False)  # Получал ли уже бонус за фидбек
     
     sessions = db.relationship('Session', back_populates='user', cascade='all, delete-orphan')
     feedback = db.relationship('Feedback', back_populates='user', cascade='all, delete-orphan')
