@@ -1149,12 +1149,47 @@ def handle_admin_feedback(message):
             total_feedback = sum(rating_counts.values())
             report += f"\n*Всего отзывов:* {total_feedback}"
             
-            # Отправляем отчет (без Markdown форматирования для надежности)
+            # Отправляем отчет с Markdown форматированием
             bot.send_message(
                 message.chat.id, 
-                report
+                report,
+                parse_mode="Markdown"
             )
             
+            # Сообщаем о создании Excel файла
+            bot.send_message(
+                message.chat.id,
+                "📊 Создание Excel-отчета с полными данными..."
+            )
+            
+            # Создаем и отправляем Excel-отчет
+            try:
+                # Импортируем модуль для создания отчета
+                from excel_report import create_simple_feedback_excel
+                
+                # Генерируем файл отчета
+                excel_path = create_simple_feedback_excel(feedback_records)
+                
+                # Отправляем файл
+                with open(excel_path, 'rb') as excel_file:
+                    bot.send_document(
+                        message.chat.id,
+                        excel_file,
+                        caption="📊 Полный отчет по обратной связи в Excel"
+                    )
+                
+                logger.info(f"Excel-отчет успешно отправлен: {excel_path}")
+                
+            except Exception as excel_error:
+                logger.error(f"Ошибка при создании Excel-отчета: {excel_error}")
+                import traceback
+                logger.error(traceback.format_exc())
+                
+                bot.send_message(
+                    message.chat.id,
+                    f"❌ Не удалось создать Excel-отчет: {str(excel_error)}"
+                )
+                
             # Отладочное сообщение для проверки, что мы дошли до этого места
             bot.send_message(
                 message.chat.id,

@@ -10,6 +10,8 @@ dependencies = [
     "gunicorn>=23.0.0",
     "httpx>=0.28.1",
     "openai>=1.76.0",
+    "openpyxl>=3.1.5",
+    "pandas>=2.2.3",
     "psycopg2-binary>=2.9.10",
     "pytelegrambotapi>=4.26.0",
     "python-telegram-bot>=22.0",
@@ -18,4 +20,5 @@ dependencies = [
     "telegram>=0.0.1",
     "trafilatura>=2.0.0",
     "werkzeug>=3.1.3",
+    "xlsxwriter>=3.2.3",
 ]

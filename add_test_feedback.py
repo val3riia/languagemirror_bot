@@ -2,37 +2,26 @@
 # -*- coding: utf-8 -*-
 
 """
-Script to add test feedback data to the Language Mirror Bot.
-This is useful for testing the admin dashboard.
+Скрипт для добавления тестовых данных обратной связи в Language Mirror Bot.
+Это полезно для тестирования функционала admin_feedback и системы генерации отчетов.
 """
 
 import os
 import sys
 import random
+import logging
 from datetime import datetime, timedelta
 
-from models import db, User, Session, Feedback
-
-# Примеры комментариев для обратной связи
-SAMPLE_COMMENTS = [
-    "Очень полезный бот! Помог мне с практикой английского.",
-    "Хорошо корректирует ошибки, но иногда не понимает контекст.",
-    "Нравится, что можно обсуждать интересные темы.",
-    "Хотелось бы больше разнообразия в темах для обсуждения.",
-    "Слишком строгие исправления, теряю мотивацию.",
-    "Отличный инструмент для ежедневной практики!",
-    "Бот хорошо адаптируется к моему уровню.",
-    "Нужно больше грамматических объяснений.",
-    "Помогает понимать разговорные фразы.",
-    "Подготовил меня к собеседованию на английском!",
-    ""  # Пустой комментарий
-]
-
-RATINGS = ["helpful", "okay", "not_helpful"]
+# Настройка логирования
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.DEBUG
+)
+logger = logging.getLogger(__name__)
 
 def generate_timestamp():
     """Генерирует случайную временную метку за последние 7 дней"""
-    now = datetime.utcnow()
+    now = datetime.now()
     days_ago = random.randint(0, 7)
     hours_ago = random.randint(0, 23)
     minutes_ago = random.randint(0, 59)
@@ -41,106 +30,138 @@ def generate_timestamp():
 
 def add_test_feedback(count=10):
     """Добавляет тестовые данные обратной связи"""
-    from flask import Flask
-    
-    # Создаем Flask приложение для работы с базой данных
-    app = Flask(__name__)
-    database_url = os.environ.get("DATABASE_URL")
-    
-    if not database_url:
-        print("ERROR: DATABASE_URL environment variable is not set")
-        return
-    
-    # Исправляем URL для PostgreSQL, если нужно
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-    
-    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-    }
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    
-    # Инициализируем базу данных с приложением
-    db.init_app(app)
-    
-    with app.app_context():
-        # Получаем существующих пользователей
-        users = User.query.all()
+    try:
+        # Импортируем необходимые модули
+        from models import db, User, Feedback
+        from main import app
         
-        if not users:
-            print("No users found in the database. Creating test users first...")
-            # Создаем тестовых пользователей, если их нет
-            for i in range(5):
-                user = User(
-                    telegram_id=random.randint(100000, 999999),
-                    username=f"test_user_{i}",
-                    first_name=f"Test{i}",
-                    last_name="User",
-                    language_level=random.choice(["A1", "A2", "B1", "B2", "C1", "C2"])
-                )
-                db.session.add(user)
+        # Тестовые данные для отзывов
+        ratings = ["helpful", "okay", "not_helpful"]
+        
+        # Веса для рейтингов, чтобы сделать распределение более реалистичным
+        # 60% полезно, 30% нормально, 10% не полезно
+        rating_weights = [0.6, 0.3, 0.1]
+        
+        # Примеры комментариев для каждого типа рейтинга
+        comments = {
+            "helpful": [
+                "Очень полезно! Узнал много новых слов.",
+                "Отличный разговорный партнер, помог мне улучшить произношение.",
+                "Понравилось объяснение грамматики, все очень понятно.",
+                "Хороший собеседник, дает полезную обратную связь.",
+                "Помог мне преодолеть языковой барьер.",
+                "Отличные статьи по теме, много узнал нового.",
+                "Супер! Буду использовать каждый день для практики."
+            ],
+            "okay": [
+                "Неплохо, но хотелось бы больше тем для обсуждения.",
+                "Нормально, но иногда ответы слишком длинные.",
+                "В целом полезно, но не хватает упражнений на грамматику.",
+                "Помогает, но хотелось бы больше идиом и разговорных фраз.",
+                "Удобно для практики, но иногда не совсем понимает вопросы."
+            ],
+            "not_helpful": [
+                "Не помогло мне с моей конкретной задачей.",
+                "Слишком много ошибок в ответах.",
+                "Не понравились рекомендованные статьи."
+            ]
+        }
+        
+        # Демо пользователи
+        demo_users = [
+            {"telegram_id": 123456789, "username": "language_learner1", "first_name": "Иван", "last_name": "Петров"},
+            {"telegram_id": 987654321, "username": "english_student", "first_name": "Анна", "last_name": "Смирнова"},
+            {"telegram_id": 555555555, "username": "polyglot007", "first_name": "Максим", "last_name": "Иванов"},
+            {"telegram_id": 111222333, "username": "linguist", "first_name": "Елена", "last_name": "Козлова"},
+            {"telegram_id": 444333222, "username": "word_lover", "first_name": "Алексей", "last_name": "Соколов"}
+        ]
+        
+        with app.app_context():
+            created_count = 0
             
-            db.session.commit()
-            users = User.query.all()
-        
-        # Создаем сессии, если их нет
-        sessions = Session.query.all()
-        if not sessions:
-            print("No sessions found. Creating test sessions...")
-            for user in users:
-                # Случайное количество сессий для каждого пользователя
-                session_count = random.randint(1, 3)
-                for _ in range(session_count):
-                    started_at = generate_timestamp()
-                    ended_at = started_at + timedelta(minutes=random.randint(5, 60))
-                    
-                    session = Session(
-                        user_id=user.id,
-                        started_at=started_at,
-                        ended_at=ended_at,
-                        is_active=False,
-                        messages_count=random.randint(5, 20)
+            # Создаем или получаем пользователей
+            users = []
+            for user_data in demo_users:
+                user = User.query.filter_by(telegram_id=user_data["telegram_id"]).first()
+                if not user:
+                    user = User(
+                        telegram_id=user_data["telegram_id"],
+                        username=user_data["username"],
+                        first_name=user_data["first_name"],
+                        last_name=user_data["last_name"],
+                        language_level="B1",  # Значение по умолчанию
+                        created_at=datetime.now()
                     )
-                    db.session.add(session)
+                    db.session.add(user)
+                    db.session.commit()
+                    logger.info(f"Создан тестовый пользователь: {user.username}")
+                
+                users.append(user)
             
+            # Добавляем отзывы
+            for i in range(count):
+                # Выбираем случайного пользователя
+                user = random.choice(users)
+                
+                # Выбираем рейтинг с учетом весов
+                rating = random.choices(ratings, weights=rating_weights, k=1)[0]
+                
+                # Выбираем случайный комментарий для этого рейтинга
+                comment = random.choice(comments[rating])
+                
+                # Генерируем случайную временную метку
+                timestamp = generate_timestamp()
+                
+                # Создаем отзыв
+                feedback = Feedback(
+                    user_id=user.id,
+                    rating=rating,
+                    comment=comment,
+                    timestamp=timestamp
+                )
+                
+                db.session.add(feedback)
+                created_count += 1
+            
+            # Сохраняем в базу данных
             db.session.commit()
-            sessions = Session.query.all()
-        
-        # Создаем обратную связь
-        print(f"Adding {count} test feedback entries...")
-        for _ in range(count):
-            # Выбираем случайного пользователя и сессию
-            user = random.choice(users)
-            session = None
             
-            # 30% шанс, что обратная связь не привязана к сессии
-            if random.random() > 0.3 and sessions:
-                user_sessions = [s for s in sessions if s.user_id == user.id]
-                if user_sessions:
-                    session = random.choice(user_sessions)
+            return created_count
             
-            feedback = Feedback(
-                user_id=user.id,
-                session_id=session.id if session else None,
-                rating=random.choice(RATINGS),
-                comment=random.choice(SAMPLE_COMMENTS),
-                timestamp=generate_timestamp()
-            )
-            
-            db.session.add(feedback)
-        
-        db.session.commit()
-        print(f"Successfully added {count} test feedback entries!")
+    except Exception as e:
+        logger.error(f"Ошибка при добавлении тестовой обратной связи: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return 0
+
+def main():
+    """Основная функция скрипта"""
+    print("\n📊 Добавление тестовых данных обратной связи для Language Mirror Bot\n")
+    
+    # Проверяем переменные окружения
+    if not os.environ.get("DATABASE_URL"):
+        print("❌ ОШИБКА: Переменная окружения DATABASE_URL не установлена")
+        print("Установите URL базы данных PostgreSQL в переменных окружения")
+        sys.exit(1)
+    
+    # Спрашиваем количество отзывов для добавления
+    try:
+        count_input = input("Сколько тестовых отзывов вы хотите добавить? (по умолчанию: 10): ")
+        count = int(count_input) if count_input.strip() else 10
+    except ValueError:
+        print("Введено некорректное значение, будет использовано значение по умолчанию (10)")
+        count = 10
+    
+    print(f"\nДобавление {count} тестовых отзывов...")
+    created_count = add_test_feedback(count)
+    
+    if created_count > 0:
+        print(f"✅ Успешно добавлено {created_count} тестовых отзывов")
+        print("\nТеперь вы можете использовать команду /admin_feedback в боте для просмотра")
+        print("этих данных или запустить test_admin_feedback.py для проверки генерации Excel-отчета.")
+    else:
+        print("❌ Не удалось добавить тестовые отзывы. Проверьте логи для деталей.")
+        sys.exit(1)
 
 if __name__ == "__main__":
-    if len(sys.argv) > 1:
-        try:
-            count = int(sys.argv[1])
-            add_test_feedback(count)
-        except ValueError:
-            print(f"Error: '{sys.argv[1]}' is not a valid number")
-            print("Usage: python add_test_feedback.py [count]")
-    else:
-        add_test_feedback()
+    main()
