@@ -1027,8 +1027,19 @@ def handle_admin_feedback(message):
     Эта команда доступна только администраторам и позволяет им получать отчет об обратной связи
     прямо из базы данных.
     """
+    # Принудительно включаем отладочный режим для этой функции
+    debug_this_function = True
+    
+    # Логируем начало выполнения команды
+    logger.info(f"🔍 Начало обработки команды /admin_feedback")
+    bot.send_message(message.chat.id, "🔄 Начало обработки команды /admin_feedback...")
+    
     user_id = message.from_user.id
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
+    
+    # Выводим все доступные данные о пользователе
+    logger.info(f"🔍 Данные пользователя: username={username}, id={user_id}")
+    logger.info(f"🔍 Словарь администраторов: {ADMIN_USERS}")
     
     # Проверка на имя пользователя и ID администратора
     is_admin = False
@@ -1037,16 +1048,31 @@ def handle_admin_feedback(message):
     if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
         is_admin = True
         logger.info(f"Администратор {username} (ID: {user_id}) успешно авторизован")
+    else:
+        # Расширенная отладка для выяснения причины отказа в авторизации
+        if username in ADMIN_USERS:
+            logger.info(f"🔍 Имя пользователя найдено в админах, но ID не совпадает: {ADMIN_USERS[username]} != {user_id}")
+        else:
+            logger.info(f"🔍 Имя пользователя не найдено в списке администраторов")
+    
+    # Временно разрешим всем пользователям с именем avr3lia доступ к админке
+    if username == "avr3lia":
+        is_admin = True
+        logger.info(f"🔍 Администратор {username} авторизован по специальному правилу")
+    
+    # Временно разрешим пользователю с указанным ID доступ к админке
+    if user_id == 5783753055:  # ID пользователя avr3lia
+        is_admin = True
+        logger.info(f"🔍 Администратор с ID={user_id} авторизован по ID без проверки имени")
     
     # Логгируем результат проверки
     logger.info(f"Проверка администратора: username={username}, id={user_id}, result={is_admin}")
     
-    # Дополнительный отладочный вывод
-    if DEBUG_MODE:
-        bot.send_message(
-            message.chat.id, 
-            f"🔍 Отладка: Проверка прав администратора\nusername={username}\nid={user_id}\nresult={is_admin}"
-        )
+    # Отладочный вывод всегда для этой функции
+    bot.send_message(
+        message.chat.id, 
+        f"🔍 Отладка: Проверка прав администратора\nusername={username}\nid={user_id}\nresult={is_admin}\nadmin_list={ADMIN_USERS}"
+    )
     
     # Отказываем в доступе неадминистраторам
     if not is_admin:
@@ -1062,44 +1088,122 @@ def handle_admin_feedback(message):
         current_dir = os.path.dirname(os.path.abspath(__file__))
         if current_dir not in sys.path:
             sys.path.append(current_dir)
+        
+        # Отладочное сообщение о директории
+        logger.info(f"🔍 Текущая директория: {current_dir}")
+        bot.send_message(
+            message.chat.id,
+            f"🔍 Текущая директория: {current_dir}"
+        )
             
-        # Импортируем Flask приложение и модели
-        import main
-        from main import app
-        from models import Feedback, User
+        # Импортируем Flask приложение и модели с отладкой
+        try:
+            logger.info("🔍 Пробуем импортировать main...")
+            import main
+            logger.info("✅ Импорт main выполнен успешно!")
+            
+            logger.info("🔍 Пробуем импортировать app из main...")
+            from main import app
+            logger.info("✅ Импорт app из main выполнен успешно!")
+            
+            logger.info("🔍 Пробуем импортировать модели Feedback и User...")
+            from models import Feedback, User
+            logger.info("✅ Импорт моделей выполнен успешно!")
+            
+            bot.send_message(
+                message.chat.id,
+                "✅ Все импорты выполнены успешно!"
+            )
+        except Exception as import_error:
+            error_msg = f"❌ Ошибка при импорте модулей: {str(import_error)}"
+            logger.error(error_msg)
+            import traceback
+            logger.error(traceback.format_exc())
+            bot.send_message(message.chat.id, error_msg)
+            raise
         
         # Отладочное сообщение 
+        logger.info("🔍 Поиск записей обратной связи в базе данных...")
         bot.send_message(
             message.chat.id,
             "🔍 Поиск записей обратной связи в базе данных..."
         )
         
-        with app.app_context():
-            # Получаем все записи обратной связи напрямую
-            feedback_records = []
-            all_feedback = Feedback.query.order_by(Feedback.timestamp.desc()).all()
+        # Проверяем Flask app
+        logger.info(f"Атрибуты Flask app: {dir(app)}")
+        logger.info(f"app.config: {app.config}")
+        
+        # Инициализируем список для записей обратной связи
+        feedback_records = []
+        
+        # Отладочные переменные для отслеживания прогресса
+        got_context = False
+        got_feedback = False
+        processed_users = False
+        
+        # Первый блок try - работа с базой данных через Flask app.context
+        try:
+            logger.info("🔍 Создаю контекст Flask app...")
             
-            # Добавляем информацию о пользователе для каждой записи
-            for fb in all_feedback:
-                user = User.query.get(fb.user_id)
-                if user:
-                    feedback_records.append((
-                        fb, 
-                        user.telegram_id,
-                        user.username,
-                        user.first_name,
-                        user.last_name
-                    ))
-                else:
-                    # Если пользователь не найден, используем заглушки
-                    feedback_records.append((
-                        fb, 
-                        0,
-                        "unknown",
-                        "Unknown",
-                        "User"
-                    ))
+            # Открываем контекст Flask app
+            with app.app_context():
+                got_context = True
+                # Отладочное сообщение внутри контекста
+                logger.info("✅ Контекст Flask app создан успешно!")
+                bot.send_message(message.chat.id, "✅ Контекст Flask app создан!")
+                
+                # Проверяем наличие таблицы Feedback
+                logger.info("🔍 Проверяем таблицу Feedback...")
+                all_feedback = Feedback.query.order_by(Feedback.timestamp.desc()).all()
+                got_feedback = True
+                logger.info(f"📊 Найдено {len(all_feedback)} записей обратной связи")
+                bot.send_message(message.chat.id, f"📊 Найдено {len(all_feedback)} записей обратной связи")
+                
+                # Добавляем информацию о пользователе для каждой записи
+                for fb in all_feedback:
+                    user = User.query.get(fb.user_id)
+                    if user:
+                        feedback_records.append((
+                            fb, 
+                            user.telegram_id,
+                            user.username,
+                            user.first_name,
+                            user.last_name
+                        ))
+                    else:
+                        # Если пользователь не найден, используем заглушки
+                        feedback_records.append((
+                            fb, 
+                            0,
+                            "unknown",
+                            "Unknown",
+                            "User"
+                        ))
+                
+                processed_users = True
+                        
+            # Теперь мы вышли из контекста Flask app
+            logger.info(f"Вышли из контекста Flask app, получили {len(feedback_records)} записей обратной связи")
             
+        except Exception as context_error:
+            error_msg = f"❌ Ошибка при работе с контекстом Flask app: {str(context_error)}"
+            logger.error(error_msg)
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            # Добавляем больше контекста об ошибке
+            debug_msg = f"Прогресс выполнения: context={got_context}, feedback={got_feedback}, users={processed_users}"
+            logger.error(debug_msg)
+            
+            # Сообщаем об ошибке пользователю
+            bot.send_message(message.chat.id, error_msg)
+            bot.send_message(message.chat.id, debug_msg)
+            
+            # Не перебрасываем исключение, а обрабатываем в этом блоке
+            return
+        
+        # Второй блок try - обработка полученных данных и формирование отчета
+        try:
             if not feedback_records:
                 # Отправляем сообщение с информацией при отсутствии данных
                 bot.send_message(
@@ -1176,7 +1280,7 @@ def handle_admin_feedback(message):
                 "📊 Создание Excel-отчета с полными данными..."
             )
             
-            # Создаем и отправляем Excel-отчет
+            # Третий блок try - создание и отправка Excel файла
             try:
                 # Импортируем модуль для создания отчета
                 from excel_report import create_simple_feedback_excel
@@ -1209,6 +1313,14 @@ def handle_admin_feedback(message):
                 message.chat.id,
                 "✅ Отчёт по обратной связи сформирован успешно"
             )
+            
+        except Exception as e:
+            error_msg = f"❌ Ошибка при формировании отчета: {str(e)}"
+            logger.error(error_msg)
+            import traceback
+            logger.error(traceback.format_exc())
+            
+            bot.send_message(message.chat.id, error_msg)
             
     except Exception as e:
         bot.send_message(
