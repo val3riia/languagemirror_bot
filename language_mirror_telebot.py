@@ -54,6 +54,13 @@ ADMIN_USERS = {}
 if ADMIN_USERNAME and ADMIN_USER_ID and ADMIN_USER_ID.isdigit():
     ADMIN_USERS[ADMIN_USERNAME] = int(ADMIN_USER_ID)
 
+# Добавляем администратора avr3lia напрямую в код
+# В будущем нужно перенести этот список в .env или другую конфигурацию
+ADMIN_USERS["avr3lia"] = 5783753055  # ID пользователя avr3lia
+
+# Для отладки выводим список администраторов в лог
+logger.info(f"Список администраторов: {ADMIN_USERS}")
+
 # Отладочный режим (можно включить в .env)
 DEBUG_MODE = os.environ.get("DEBUG", "False").lower() == "true"
 
