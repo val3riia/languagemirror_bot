@@ -65,14 +65,14 @@ def start_bot_thread():
         import traceback
         logger.error(traceback.format_exc())
 
-# Start bot in background if TELEGRAM_TOKEN is set
-if os.environ.get("TELEGRAM_TOKEN"):
-    # Start bot in a separate thread
+# Проверяем наличие переменной окружения BOT_AUTO_START
+if os.environ.get("BOT_AUTO_START", "False").lower() == "true" and os.environ.get("TELEGRAM_TOKEN"):
+    # Запускаем бота в отдельном потоке, только если установлен флаг BOT_AUTO_START
     bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
     bot_thread.start()
-    logger.info("Bot thread started successfully")
+    logger.info("Bot thread started successfully (automatic start enabled)")
 else:
-    logger.warning("TELEGRAM_TOKEN not set or bot startup disabled.")
+    logger.warning("Automatic bot startup disabled. Set BOT_AUTO_START=True to enable.")
 
 @app.route('/')
 def index():

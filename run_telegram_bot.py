@@ -1,16 +1,14 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
 """
-Launcher for Language Mirror Telegram Bot.
-This script imports and runs the main bot function.
+Скрипт для запуска Telegram бота в standalone режиме.
+Этот скрипт запускает бота без запуска веб-приложения Flask.
 """
-
+import logging
+import time
 import os
 import sys
-import logging
 
-# Настройка логирования
+# Настраиваем логгирование
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
@@ -18,43 +16,35 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 def main():
-    # Проверка наличия TELEGRAM_TOKEN
+    """Основная функция для запуска бота"""
+    logger.info("=== Запуск Telegram бота ===")
+    
+    # Проверяем наличие токена Telegram
     if not os.environ.get("TELEGRAM_TOKEN"):
-        logger.error("TELEGRAM_TOKEN environment variable is not set")
-        print("ERROR: TELEGRAM_TOKEN environment variable is not set")
-        print("Please get a token from @BotFather and set it as an environment variable")
-        print("Example: export TELEGRAM_TOKEN=your_token_here")
-        sys.exit(1)
+        logger.error("TELEGRAM_TOKEN не найден в переменных окружения!")
+        return False
     
-    # Принудительно удаляем webhook перед запуском
-    import telebot
     try:
-        token = os.environ.get("TELEGRAM_TOKEN")
-        bot = telebot.TeleBot(token)
+        # Импортируем модуль с ботом и запускаем его
+        from language_mirror_telebot import bot, main as run_bot
+        
+        # Принудительно удаляем webhook перед запуском
         bot.remove_webhook()
-        logger.info("Webhook removed successfully")
-    except Exception as e:
-        logger.error(f"Error removing webhook: {e}")
-    
-    # Проверка, какая версия бота доступна
-    try:
-        import telebot
-        import time
-        # Даем Telegram API время закрыть предыдущие соединения
-        time.sleep(3)
+        logger.info("Webhook успешно удален")
         
-        # Запускаем бота напрямую
-        from language_mirror_telebot import bot
-        logger.info("Starting Language Mirror bot using telebot (PyTelegramBotAPI)")
+        # Ждем немного для завершения удаления webhook
+        time.sleep(2)
         
-        # Запускаем bot.polling напрямую
-        logger.info("Starting bot polling...")
-        bot.polling(none_stop=True, interval=1, timeout=60)
+        # Запускаем бота
+        logger.info("Запускаем бота...")
+        run_bot()
+        
+        return True
     except Exception as e:
-        logger.error(f"Error starting bot: {e}")
+        logger.error(f"Ошибка при запуске бота: {e}")
         import traceback
         logger.error(traceback.format_exc())
-        sys.exit(1)
+        return False
 
 if __name__ == "__main__":
     main()
