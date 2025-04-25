@@ -52,15 +52,31 @@ feedback_data = []
 # Start bot in separate thread
 def start_bot_thread():
     try:
+        # Wait a bit to ensure Flask app is fully initialized
+        time.sleep(2)
+        
         # Import runs in thread to avoid blocking web server
         from language_mirror_telebot import main as run_bot
         logger.info("Starting bot in background thread...")
         run_bot()
     except Exception as e:
         logger.error(f"Error starting bot thread: {e}")
+        # Print the full traceback for easier debugging
+        import traceback
+        logger.error(traceback.format_exc())
 
 # Start bot in background if TELEGRAM_TOKEN is set
 if os.environ.get("TELEGRAM_TOKEN"):
+    # Stop any previous instances that might be running
+    try:
+        logger.info("Checking for running bot instances...")
+        import subprocess
+        subprocess.run("pkill -f 'python.*language_mirror_telebot'", shell=True)
+        time.sleep(1)  # Give time for processes to terminate
+    except Exception as e:
+        logger.warning(f"Error stopping previous bot instances: {e}")
+    
+    # Start the new bot thread
     bot_thread = threading.Thread(target=start_bot_thread)
     bot_thread.daemon = True  # Set as daemon so it exits when main thread exits
     bot_thread.start()
