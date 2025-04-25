@@ -1026,20 +1026,10 @@ def handle_admin_feedback(message):
     # Проверка на имя пользователя и ID администратора
     is_admin = False
     
-    # Сначала проверяем принудительный ID администратора (для отладки)
-    if user_id == FORCE_ADMIN_ID:
+    # Проверяем, соответствует ли имя пользователя и ID данным в ADMIN_USERS
+    if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
         is_admin = True
-        logger.info(f"Администратор авторизован по фиксированному ID: {user_id}")
-    
-    # Проверяем по имени пользователя
-    elif username == "avr3lia":
-        is_admin = True
-        logger.info(f"Администратор {username} авторизован по имени")
-    
-    # Проверяем по ID из словаря администраторов
-    elif user_id == ADMIN_USERS.get("avr3lia", 0):
-        is_admin = True
-        logger.info(f"Администратор авторизован по ID из списка: {user_id}")
+        logger.info(f"Администратор {username} (ID: {user_id}) успешно авторизован")
     
     # Логгируем результат проверки
     logger.info(f"Проверка администратора: username={username}, id={user_id}, result={is_admin}")
