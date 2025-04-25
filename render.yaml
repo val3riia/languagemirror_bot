@@ -14,7 +14,7 @@ services:
       - key: TELEGRAM_TOKEN
         sync: false
       - key: WEBHOOK_URL
-        sync: false
+        value: https://language-mirror-bot.onrender.com
       - key: WEBHOOK_MODE
         value: false
       - key: ADMIN_USERNAME
@@ -39,7 +39,10 @@ services:
       - key: TELEGRAM_TOKEN
         sync: false
       - key: WEBHOOK_URL
-        sync: false
+        fromService:
+          name: language-mirror-bot
+          type: web
+          property: url
       - key: WEBHOOK_MODE
         value: true
       - key: ADMIN_USERNAME
