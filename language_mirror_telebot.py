@@ -46,17 +46,23 @@ if not TELEGRAM_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # Список администраторов (имена пользователей и ID)
-ADMIN_USERS = {
-    "avr3lia": 5783753055
-}
+# Получаем список админов из переменных окружения
+ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
+ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "0")
+
+# Создаем словарь администраторов
+ADMIN_USERS = {}
+if ADMIN_USERNAME and ADMIN_USER_ID and ADMIN_USER_ID.isdigit():
+    ADMIN_USERS[ADMIN_USERNAME] = int(ADMIN_USER_ID)
 
 # Отладочный режим для отображения дополнительной информации об ошибках
-DEBUG_MODE = True
+DEBUG_MODE = os.environ.get("DEBUG_MODE", "False").lower() == "true"
 
-# Фиксированный ID администратора для тестирования
+# Получаем force admin ID из переменных окружения
 # При любой проверке администратора данный ID будет автоматически считаться администратором
 # Это нужно для отладки команды /admin_feedback
-FORCE_ADMIN_ID = 5783753055
+FORCE_ADMIN_ID_STR = os.environ.get("FORCE_ADMIN_ID", "0")
+FORCE_ADMIN_ID = int(FORCE_ADMIN_ID_STR) if FORCE_ADMIN_ID_STR.isdigit() else 0
 
 # Уровни владения языком с описаниями
 LANGUAGE_LEVELS = {
@@ -315,7 +321,7 @@ def handle_discussion(message):
         elif user_record.last_discussion_date == today:
             # Проверяем, является ли пользователь администратором
             username = message.from_user.username if hasattr(message.from_user, 'username') else None
-            is_admin = (username == "avr3lia" or user_id == ADMIN_USERS.get("avr3lia"))
+            is_admin = (username in ADMIN_USERS and user_id == ADMIN_USERS.get(username, 0)) or user_id == FORCE_ADMIN_ID
             
             # Для администратора не действуют ограничения
             if is_admin:
