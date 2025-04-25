@@ -205,16 +205,13 @@ def handle_start(message):
     markup.add(start_button)
     markup.add(discussion_button, stop_button)
     
-    # Проверяем, является ли пользователь администратором
+    # Проверяем, является ли пользователь администратором (только avr3lia)
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
-    user_id = message.from_user.id
-    is_admin = username in ADMIN_USERS and user_id == ADMIN_USERS.get(username, 0)
-    
-    # Добавляем кнопку администратора для уполномоченных пользователей
-    if is_admin or user_id == FORCE_ADMIN_ID:
+    if username == "avr3lia":
+        # Добавляем кнопку администратора
         admin_button = types.KeyboardButton('/admin_feedback')
         markup.add(admin_button)
-        logger.info(f"Добавлена кнопка администратора для пользователя {username} (ID: {user_id})")
+        logger.info(f"Добавлена кнопка администратора для пользователя {username}")
         
     # Формируем приветственное сообщение
     welcome_text = f"Hello {user_name}! 👋\n\n"
@@ -318,7 +315,7 @@ def handle_discussion(message):
         elif user_record.last_discussion_date == today:
             # Проверяем, является ли пользователь администратором
             username = message.from_user.username if hasattr(message.from_user, 'username') else None
-            is_admin = (username in ADMIN_USERS and user_id == ADMIN_USERS.get(username, 0)) or user_id == FORCE_ADMIN_ID
+            is_admin = (username == "avr3lia" or user_id == ADMIN_USERS.get("avr3lia"))
             
             # Для администратора не действуют ограничения
             if is_admin:
