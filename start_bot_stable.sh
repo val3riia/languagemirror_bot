@@ -1,76 +1,97 @@
 #!/bin/bash
 
-# Стабильный скрипт запуска Language Mirror Bot
-# Выполняет:
-# 1. Проверку переменных окружения
-# 2. Остановку других экземпляров бота
-# 3. Запуск бота через стабильный launcher в фоновом режиме с записью логов
+# Скрипт для запуска и поддержания работы бота Telegram
+# Этот скрипт запускает бота в фоновом режиме и перезапускает его в случае сбоя
 
-# Отображаем приветствие
-echo "====================================================="
-echo "🤖 Language Mirror Bot - Стабильный запуск"
-echo "====================================================="
-
-# Проверка TELEGRAM_TOKEN
+# Проверка наличия переменных окружения
 if [ -z "$TELEGRAM_TOKEN" ]; then
-    echo "❌ ОШИБКА: Переменная окружения TELEGRAM_TOKEN не установлена"
-    echo "Получите токен у @BotFather и установите его, например:"
-    echo "export TELEGRAM_TOKEN=your_token_here"
-    exit 1
-else
-    echo "✅ TELEGRAM_TOKEN найден"
-fi
-
-# Проверка OpenRouter API (опционально)
-if [ -z "$OPENROUTER_API_KEY" ]; then
-    echo "⚠️ ПРЕДУПРЕЖДЕНИЕ: Переменная OPENROUTER_API_KEY не установлена"
-    echo "Бот будет работать в режиме резервных шаблонов, без AI"
-else
-    echo "✅ OpenRouter API ключ найден"
-fi
-
-# Остановка других экземпляров бота
-echo "🔄 Остановка предыдущих экземпляров бота..."
-pkill -f 'python.*language_mirror' || true
-pkill -f 'python.*run_bot' || true
-pkill -f 'python.*telebot' || true
-sleep 2
-
-# Проверка прямого доступа к API Telegram
-echo "🔍 Проверка подключения к Telegram API..."
-python test_bot_connection.py >/dev/null 2>&1
-
-# В случае ошибки доступа к API
-if [ $? -ne 0 ]; then
-    echo "❌ Ошибка подключения к Telegram API"
-    echo "Запуск бота невозможен. Проверьте подключение к сети и токен."
+    echo "ERROR: TELEGRAM_TOKEN environment variable is not set."
+    echo "Please set it to your Telegram bot token from BotFather."
     exit 1
 fi
 
-# Создаем папку для логов, если не существует
-mkdir -p logs
+# Идентификатор процесса бота
+PID_FILE="bot.pid"
 
-# Создаем имя файла лога с текущей датой и временем
-LOG_FILE="logs/bot_$(date +%Y%m%d_%H%M%S).log"
+# Функция для остановки текущего процесса бота
+stop_bot() {
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            echo "Stopping bot process with PID $PID..."
+            kill $PID
+            sleep 2
+            # Проверяем, остановился ли процесс
+            if ps -p $PID > /dev/null 2>&1; then
+                echo "Process did not stop gracefully, forcing termination..."
+                kill -9 $PID
+            fi
+        else
+            echo "Bot process with PID $PID is not running."
+        fi
+        rm -f "$PID_FILE"
+    else
+        echo "No PID file found."
+    fi
+}
 
-# Запуск бота в фоновом режиме с записью логов
-echo "🚀 Запуск Language Mirror Bot..."
-echo "Логи будут записаны в файл: $LOG_FILE"
-echo "---------------------------------------------------"
-nohup python language_mirror_telebot.py > "$LOG_FILE" 2>&1 &
+# Функция для запуска бота
+start_bot() {
+    echo "Starting Language Mirror Bot..."
+    
+    # Запускаем бота в фоновом режиме
+    python run_bot_stable.py &
+    
+    # Сохраняем PID процесса
+    BOT_PID=$!
+    echo $BOT_PID > "$PID_FILE"
+    
+    echo "Bot started with PID $BOT_PID"
+    return 0
+}
 
-# Запоминаем PID процесса
-BOT_PID=$!
-echo $BOT_PID > bot.pid
+# Проверка наличия процесса бота
+check_bot() {
+    if [ -f "$PID_FILE" ]; then
+        PID=$(cat "$PID_FILE")
+        if ps -p $PID > /dev/null 2>&1; then
+            return 0  # Бот запущен
+        else
+            return 1  # Бот не запущен
+        fi
+    else
+        return 1  # PID-файл не существует
+    fi
+}
 
-# Проверяем, запустился ли процесс
-sleep 3
-if ps -p $BOT_PID > /dev/null; then
-    echo "✅ Бот успешно запущен в фоновом режиме (PID: $BOT_PID)"
-    echo "Логи доступны в файле: $LOG_FILE"
-    echo "Для остановки бота выполните: kill -9 $BOT_PID"
-else
-    echo "❌ Ошибка при запуске бота"
-    echo "Проверьте логи в файле: $LOG_FILE"
-    exit 1
-fi
+# Обработка параметров командной строки
+case "$1" in
+    start)
+        if check_bot; then
+            echo "Bot already running with PID $(cat $PID_FILE)"
+        else
+            start_bot
+        fi
+        ;;
+    stop)
+        stop_bot
+        ;;
+    restart)
+        stop_bot
+        sleep 1
+        start_bot
+        ;;
+    status)
+        if check_bot; then
+            echo "Bot is running with PID $(cat $PID_FILE)"
+        else
+            echo "Bot is not running"
+        fi
+        ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}"
+        exit 1
+        ;;
+esac
+
+exit 0

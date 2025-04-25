@@ -1,87 +1,66 @@
 # Language Mirror Bot
 
-An intelligent Telegram bot for personalized English language learning, powered by advanced AI technologies to create adaptive and engaging language experiences.
-
-## Overview
-
-Language Mirror Bot помогает пользователям практиковать английский язык через интерактивные диалоги с AI-ассистентом, который адаптируется к уровню владения языком пользователя (от A1 до C2). Бот также предлагает статьи по интересующим пользователя темам и собирает обратную связь для улучшения качества обучения.
+Language Mirror is an intelligent Telegram bot designed for personalized English language learning. It provides an interactive conversational experience that helps users practice English through natural conversation on topics they're interested in.
 
 ## Features
 
-- **Адаптивные диалоги**: Бот подстраивается под уровень владения языком пользователя
-- **Рекомендации статей**: Поиск и предложение релевантных статей по темам, интересующим пользователя
-- **Обратная связь**: Система сбора и анализа обратной связи от пользователей
-- **Административная панель**: Мониторинг использования и анализ обратной связи
-- **База данных**: Хранение данных о пользователях, сессиях и взаимодействиях
+- **Conversation Practice**: Chat on any topic to improve your English
+- **Level Adaptation**: Adjusts to your language proficiency (A1 to C2)
+- **Error Correction**: Gentle correction of mistakes to help you improve
+- **Personalized Topics**: Suggests discussion topics based on your level
+- **Article Recommendations**: Suggests reading materials on topics you're interested in
+- **Feedback System**: Provide feedback after conversations to help improve the bot
 
-## Tech Stack
+## Commands
 
-- Telegram Bot API
-- Python/Flask backend
-- OpenRouter AI (GPT-4o mini)
-- PostgreSQL
-- Advanced NLP и machine learning
+- `/start` - Show welcome message and bot information
+- `/discussion` - Start an English conversation or get article recommendations (limited uses per day)
+- `/stop_discussion` - End the current conversation
+- `/admin_feedback` - Admin command to get feedback reports (requires admin privileges)
+
+## Requirements
+
+- Python 3.8+
+- PostgreSQL database
+- Telegram Bot API token
+- OpenRouter API key (for accessing GPT models)
 
 ## Installation
 
-1. Clone the repository:
-   ```
-   git clone https://github.com/yourusername/language-mirror-bot.git
-   cd language-mirror-bot
-   ```
-
-2. Create and activate a virtual environment:
-   ```
-   python -m venv venv
-   source venv/bin/activate  # On Windows: venv\Scripts\activate
-   ```
-
-3. Install dependencies:
+1. Clone this repository
+2. Install dependencies:
    ```
    pip install -r requirements.txt
    ```
-
-4. Create `.env` file from the template:
+3. Set up environment variables (see .env.example)
+4. Run the bot:
    ```
-   cp .env.example .env
+   python run_bot_stable.py
    ```
 
-5. Edit the `.env` file with your credentials:
-   - Add your Telegram Bot Token (`TELEGRAM_TOKEN`)
-   - Configure database connection (`DATABASE_URL`)
-   - Add your OpenRouter API key (`OPENROUTER_API_KEY`)
-   - Set admin credentials if needed
+## Environment Variables
 
-## Running the Bot
+Create a `.env` file with the following variables:
 
-Start the bot:
 ```
-python run_bot_stable.py
-```
-
-For development or testing:
-```
-python language_mirror_telebot.py
+TELEGRAM_TOKEN=your_telegram_bot_token
+DATABASE_URL=your_postgresql_database_url
+OPENROUTER_API_KEY=your_openrouter_api_key
+ADMIN_USERNAME=admin_telegram_username
+ADMIN_USER_ID=admin_telegram_user_id
 ```
 
-## Admin Dashboard
+## Database Setup
 
-The project includes a simple web dashboard for viewing user feedback:
-```
-python main.py
-```
-Then navigate to `http://localhost:5000/admin/feedback`
+The bot uses PostgreSQL for data storage. The database schema will be automatically created when the bot starts for the first time.
 
-## Project Structure
+## Admin Features
 
-- `language_mirror_telebot.py` - Main bot implementation
-- `models.py` - Database models
-- `db_session_manager.py` - Session management with database persistence
-- `openrouter_client.py` - Client for OpenRouter API (GPT models)
-- `excel_report.py` - Report generation utilities
-- `main.py` - Web dashboard for admin
-- `run_bot_stable.py` - Stable bot runner with error handling
+Designated administrators can access additional features:
+- View feedback from users via the `/admin_feedback` command
+- Unlimited use of the `/discussion` command
+- Export feedback reports in Excel format
 
 ## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
