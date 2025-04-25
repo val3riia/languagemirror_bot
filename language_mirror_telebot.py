@@ -1331,6 +1331,61 @@ def handle_admin_feedback(message):
         import traceback
         logger.error(traceback.format_exc())
 
+def run_webhook(host='0.0.0.0', port=8443, webhook_url=None):
+    """
+    Запускает бота в режиме webhook.
+    
+    Args:
+        host: Хост для прослушивания (по умолчанию 0.0.0.0)
+        port: Порт для прослушивания (по умолчанию 8443)
+        webhook_url: URL для установки webhook (по умолчанию использует переменную среды WEBHOOK_URL)
+    """
+    try:
+        # Если URL для webhook не указан, пытаемся получить его из переменной среды
+        if not webhook_url:
+            webhook_url = os.environ.get("WEBHOOK_URL")
+            if not webhook_url:
+                logger.error("WEBHOOK_URL environment variable is not set")
+                return False
+        
+        # Настраиваем webhook
+        logger.info(f"Setting webhook to URL: {webhook_url}")
+        bot.remove_webhook()
+        time.sleep(0.5)  # Небольшая пауза, чтобы webhook успел удалиться
+        
+        # Устанавливаем webhook
+        bot.set_webhook(url=webhook_url)
+        
+        # Запускаем Flask-сервер для обработки webhook-запросов
+        from flask import Flask, request, abort
+        
+        app = Flask(__name__)
+        
+        @app.route('/', methods=['GET'])
+        def index():
+            return 'Language Mirror Bot is running in webhook mode'
+        
+        @app.route(f'/{bot.token}', methods=['POST'])
+        def webhook():
+            if request.headers.get('content-type') == 'application/json':
+                json_string = request.get_data().decode('utf-8')
+                update = telebot.types.Update.de_json(json_string)
+                bot.process_new_updates([update])
+                return ''
+            else:
+                abort(403)
+        
+        # Запускаем Flask-сервер
+        logger.info(f"Starting webhook server on {host}:{port}")
+        app.run(host=host, port=port)
+        return True
+    
+    except Exception as e:
+        logger.error(f"Error setting up webhook: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        return False
+
 def main():
     """Запускает бота."""
     logger.info("Starting Language Mirror bot...")
@@ -1342,24 +1397,34 @@ def main():
         logger.warning("No session manager available, initializing empty user_sessions")
         user_sessions = {}
     
-    # Принудительно удаляем webhook перед запуском polling
-    try:
-        bot.remove_webhook()
-        logger.info("Webhook removed successfully")
-    except Exception as e:
-        logger.error(f"Error removing webhook: {e}")
+    # Проверяем, нужно ли запустить в режиме webhook
+    webhook_mode = os.environ.get("WEBHOOK_MODE", "false").lower() == "true"
     
-    # Добавляем паузу перед запуском polling
-    import time
-    time.sleep(1)
-    
-    # Запускаем бота с polling в non-threaded режиме с более строгими таймаутами
-    try:
-        bot.polling(none_stop=True, interval=0, timeout=20)
-    except Exception as e:
-        logger.error(f"Error in polling: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    if webhook_mode:
+        # Запускаем в режиме webhook
+        webhook_url = os.environ.get("WEBHOOK_URL")
+        webhook_port = int(os.environ.get("PORT", 8443))
+        logger.info(f"Starting bot in webhook mode on port {webhook_port}")
+        run_webhook(port=webhook_port, webhook_url=webhook_url)
+    else:
+        # Принудительно удаляем webhook перед запуском polling
+        try:
+            bot.remove_webhook()
+            logger.info("Webhook removed successfully")
+        except Exception as e:
+            logger.error(f"Error removing webhook: {e}")
+        
+        # Добавляем паузу перед запуском polling
+        import time
+        time.sleep(1)
+        
+        # Запускаем бота с polling в non-threaded режиме с более строгими таймаутами
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            logger.error(f"Error in polling: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
