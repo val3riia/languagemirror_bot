@@ -20,7 +20,7 @@ from openrouter_client import OpenRouterClient
 # Настройка логирования
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.DEBUG  # Уровень DEBUG для более подробных логов
 )
 logger = logging.getLogger(__name__)
 
