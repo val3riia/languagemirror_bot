@@ -1048,18 +1048,26 @@ def handle_admin_feedback(message):
     
     bot.send_message(message.chat.id, "🔄 Получение данных обратной связи...")
     
-    # Получаем обратную связь непосредственно из базы данных
-    from models import db, Feedback, User
-    from main import app
-    
     try:
-        with app.app_context():
-            # Отладочное сообщение 
-            bot.send_message(
-                message.chat.id,
-                "🔍 Поиск записей обратной связи в базе данных..."
-            )
+        # Импортируем всё, что нужно для доступа к базе данных
+        import os
+        import sys
+        current_dir = os.path.dirname(os.path.abspath(__file__))
+        if current_dir not in sys.path:
+            sys.path.append(current_dir)
             
+        # Импортируем Flask приложение и модели
+        import main
+        from main import app
+        from models import Feedback, User
+        
+        # Отладочное сообщение 
+        bot.send_message(
+            message.chat.id,
+            "🔍 Поиск записей обратной связи в базе данных..."
+        )
+        
+        with app.app_context():
             # Получаем все записи обратной связи напрямую
             feedback_records = []
             all_feedback = Feedback.query.order_by(Feedback.timestamp.desc()).all()
@@ -1201,6 +1209,8 @@ def handle_admin_feedback(message):
             f"❌ Произошла ошибка при получении данных обратной связи: {str(e)}"
         )
         logger.error(f"Error in admin_feedback: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 def main():
     """Запускает бота."""
