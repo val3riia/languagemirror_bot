@@ -65,11 +65,12 @@ def start_bot_thread():
         import traceback
         logger.error(traceback.format_exc())
 
-# Start bot in background if TELEGRAM_TOKEN is set (disabled for direct start)
-if False and os.environ.get("TELEGRAM_TOKEN"):
-    # Disabled because we're now running the bot separately
-    # to avoid multiple instances running simultaneously
-    logger.info("Bot will not start automatically - use run_directly.py instead")
+# Start bot in background if TELEGRAM_TOKEN is set
+if os.environ.get("TELEGRAM_TOKEN"):
+    # Start bot in a separate thread
+    bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
+    bot_thread.start()
+    logger.info("Bot thread started successfully")
 else:
     logger.warning("TELEGRAM_TOKEN not set or bot startup disabled.")
 
