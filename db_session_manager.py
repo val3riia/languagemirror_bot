@@ -48,36 +48,40 @@ class DatabaseSessionManager:
         # If database is available, create a session there as well
         if self.with_database:
             try:
-                # Find or create the user
-                telegram_user = User.query.filter_by(telegram_id=user_id).first()
-                if not telegram_user:
-                    telegram_user = User(
-                        telegram_id=user_id,
-                        username=initial_data.get("username") if initial_data else None,
-                        first_name=initial_data.get("first_name") if initial_data else None,
-                        last_name=initial_data.get("last_name") if initial_data else None,
-                        language_level=initial_data.get("language_level") if initial_data else None
-                    )
-                    db.session.add(telegram_user)
-                    db.session.commit()
-                
-                # Update user's language level if provided
-                if initial_data and "language_level" in initial_data:
-                    telegram_user.language_level = initial_data["language_level"]
-                    db.session.commit()
-                
-                # Create a new db session
-                db_session = Session(
-                    user_id=telegram_user.id,
-                    started_at=datetime.utcnow(),
-                    is_active=True
-                )
-                db.session.add(db_session)
-                db.session.commit()
-                
-                # Store the session ID in memory for reference
-                self.in_memory_sessions[user_id]["db_session_id"] = db_session.id
-                
+                # Create app context if needed
+                if self.app is not None:
+                    with self.app.app_context():
+                        # Find or create the user
+                        telegram_user = User.query.filter_by(telegram_id=user_id).first()
+                        if not telegram_user:
+                            telegram_user = User(
+                                telegram_id=user_id,
+                                username=initial_data.get("username") if initial_data else None,
+                                first_name=initial_data.get("first_name") if initial_data else None,
+                                last_name=initial_data.get("last_name") if initial_data else None,
+                                language_level=initial_data.get("language_level") if initial_data else None
+                            )
+                            db.session.add(telegram_user)
+                            db.session.commit()
+                        
+                        # Update user's language level if provided
+                        if initial_data and "language_level" in initial_data:
+                            telegram_user.language_level = initial_data["language_level"]
+                            db.session.commit()
+                        
+                        # Create a new db session
+                        db_session = Session(
+                            user_id=telegram_user.id,
+                            started_at=datetime.utcnow(),
+                            is_active=True
+                        )
+                        db.session.add(db_session)
+                        db.session.commit()
+                        
+                        # Store the session ID in memory for reference
+                        self.in_memory_sessions[user_id]["db_session_id"] = db_session.id
+                else:
+                    print("Flask app context not available - using in-memory only")
             except Exception as e:
                 print(f"Error creating database session: {e}")
     
@@ -108,11 +112,16 @@ class DatabaseSessionManager:
         # Update database if available
         if self.with_database and "db_session_id" in in_memory_session:
             try:
-                # Update session last activity in database
-                db_session = Session.query.get(in_memory_session["db_session_id"])
-                if db_session and db_session.is_active:
-                    db_session.last_activity = datetime.utcnow()
-                    db.session.commit()
+                # Create app context if needed
+                if self.app is not None:
+                    with self.app.app_context():
+                        # Update session last activity in database
+                        db_session = Session.query.get(in_memory_session["db_session_id"])
+                        if db_session and db_session.is_active:
+                            db_session.last_activity = datetime.utcnow()
+                            db.session.commit()
+                else:
+                    print("Flask app context not available - using in-memory only")
             except Exception as e:
                 print(f"Error updating session activity: {e}")
         
@@ -135,11 +144,16 @@ class DatabaseSessionManager:
             # Update database if appropriate and possible
             if self.with_database and "language_level" in data:
                 try:
-                    # Update user language level
-                    telegram_user = User.query.filter_by(telegram_id=user_id).first()
-                    if telegram_user:
-                        telegram_user.language_level = data["language_level"]
-                        db.session.commit()
+                    # Create app context if needed
+                    if self.app is not None:
+                        with self.app.app_context():
+                            # Update user language level
+                            telegram_user = User.query.filter_by(telegram_id=user_id).first()
+                            if telegram_user:
+                                telegram_user.language_level = data["language_level"]
+                                db.session.commit()
+                    else:
+                        print("Flask app context not available - using in-memory only")
                 except Exception as e:
                     print(f"Error updating user data: {e}")
     
@@ -157,13 +171,18 @@ class DatabaseSessionManager:
             # Update database if available
             if self.with_database and "db_session_id" in session:
                 try:
-                    # Mark session as inactive in database
-                    db_session = Session.query.get(session["db_session_id"])
-                    if db_session:
-                        db_session.is_active = False
-                        db_session.ended_at = datetime.utcnow()
-                        db_session.messages_count = len(session.get("messages", []))
-                        db.session.commit()
+                    # Create app context if needed
+                    if self.app is not None:
+                        with self.app.app_context():
+                            # Mark session as inactive in database
+                            db_session = Session.query.get(session["db_session_id"])
+                            if db_session:
+                                db_session.is_active = False
+                                db_session.ended_at = datetime.utcnow()
+                                db_session.messages_count = len(session.get("messages", []))
+                                db.session.commit()
+                    else:
+                        print("Flask app context not available - using in-memory only")
                 except Exception as e:
                     print(f"Error ending database session: {e}")
             
@@ -195,14 +214,19 @@ class DatabaseSessionManager:
             # Add to database if available
             if self.with_database and "db_session_id" in session:
                 try:
-                    # Create new message in database
-                    message = Message(
-                        session_id=session["db_session_id"],
-                        role=role,
-                        content=content
-                    )
-                    db.session.add(message)
-                    db.session.commit()
+                    # Create app context if needed
+                    if self.app is not None:
+                        with self.app.app_context():
+                            # Create new message in database
+                            message = Message(
+                                session_id=session["db_session_id"],
+                                role=role,
+                                content=content
+                            )
+                            db.session.add(message)
+                            db.session.commit()
+                    else:
+                        print("Flask app context not available - using in-memory only")
                 except Exception as e:
                     print(f"Error adding message to database: {e}")
     
