@@ -1108,8 +1108,24 @@ def main():
     logger.info("Starting Language Mirror bot...")
     print("Bot is running! Press Ctrl+C to stop.")
     
-    # Запускаем бота с использованием long polling
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    # Принудительно удаляем webhook перед запуском polling
+    try:
+        bot.remove_webhook()
+        logger.info("Webhook removed successfully")
+    except Exception as e:
+        logger.error(f"Error removing webhook: {e}")
+    
+    # Добавляем паузу перед запуском polling
+    import time
+    time.sleep(1)
+    
+    # Запускаем бота с polling в non-threaded режиме с более строгими таймаутами
+    try:
+        bot.polling(none_stop=True, interval=0, timeout=20)
+    except Exception as e:
+        logger.error(f"Error in polling: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

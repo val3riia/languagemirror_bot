@@ -65,24 +65,13 @@ def start_bot_thread():
         import traceback
         logger.error(traceback.format_exc())
 
-# Start bot in background if TELEGRAM_TOKEN is set
-if os.environ.get("TELEGRAM_TOKEN"):
-    # Stop any previous instances that might be running
-    try:
-        logger.info("Checking for running bot instances...")
-        import subprocess
-        subprocess.run("pkill -f 'python.*language_mirror_telebot'", shell=True)
-        time.sleep(1)  # Give time for processes to terminate
-    except Exception as e:
-        logger.warning(f"Error stopping previous bot instances: {e}")
-    
-    # Start the new bot thread
-    bot_thread = threading.Thread(target=start_bot_thread)
-    bot_thread.daemon = True  # Set as daemon so it exits when main thread exits
-    bot_thread.start()
-    logger.info("Bot thread started")
+# Start bot in background if TELEGRAM_TOKEN is set (disabled for direct start)
+if False and os.environ.get("TELEGRAM_TOKEN"):
+    # Disabled because we're now running the bot separately
+    # to avoid multiple instances running simultaneously
+    logger.info("Bot will not start automatically - use run_directly.py instead")
 else:
-    logger.warning("TELEGRAM_TOKEN not set. Bot will not start.")
+    logger.warning("TELEGRAM_TOKEN not set or bot startup disabled.")
 
 @app.route('/')
 def index():

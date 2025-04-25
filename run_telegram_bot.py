@@ -26,22 +26,35 @@ def main():
         print("Example: export TELEGRAM_TOKEN=your_token_here")
         sys.exit(1)
     
+    # Принудительно удаляем webhook перед запуском
+    import telebot
+    try:
+        token = os.environ.get("TELEGRAM_TOKEN")
+        bot = telebot.TeleBot(token)
+        bot.remove_webhook()
+        logger.info("Webhook removed successfully")
+    except Exception as e:
+        logger.error(f"Error removing webhook: {e}")
+    
     # Проверка, какая версия бота доступна
     try:
-        from language_mirror_telebot import main as telebot_main
+        import telebot
+        import time
+        # Даем Telegram API время закрыть предыдущие соединения
+        time.sleep(3)
+        
+        # Запускаем бота напрямую
+        from language_mirror_telebot import bot
         logger.info("Starting Language Mirror bot using telebot (PyTelegramBotAPI)")
-        telebot_main()
-    except ImportError:
-        try:
-            from language_mirror_bot import main as ptb_main
-            logger.info("Starting Language Mirror bot using python-telegram-bot")
-            ptb_main()
-        except ImportError:
-            logger.error("Could not import either bot implementation")
-            print("ERROR: No bot implementation found")
-            print("Make sure either pytelegrambotapi or python-telegram-bot is installed")
-            print("Run: pip install pytelegrambotapi")
-            sys.exit(1)
+        
+        # Запускаем bot.polling напрямую
+        logger.info("Starting bot polling...")
+        bot.polling(none_stop=True, interval=1, timeout=60)
+    except Exception as e:
+        logger.error(f"Error starting bot: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
