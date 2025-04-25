@@ -45,6 +45,14 @@ if not TELEGRAM_TOKEN:
 # Создаем экземпляр бота
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# Список администраторов (имена пользователей и ID)
+ADMIN_USERS = {
+    "avr3lia": 5783753055
+}
+
+# Отладочный режим для отображения дополнительной информации об ошибках
+DEBUG_MODE = True
+
 # Уровни владения языком с описаниями
 LANGUAGE_LEVELS = {
     "A1": "Beginner - You're just starting with English",
@@ -59,19 +67,21 @@ LANGUAGE_LEVELS = {
 try:
     from db_session_manager import DatabaseSessionManager
     from flask import Flask
-    import os
     
-    # Пробуем использовать базу данных, если доступна
-    if os.environ.get("DATABASE_URL"):
-        # Создаем Flask приложение для инициализации БД
-        app = Flask(__name__)
-        database_url = os.environ.get("DATABASE_URL")
+    # Создаем Flask приложение для инициализации БД
+    app = Flask(__name__)
+    
+    # Получаем URL базы данных
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        # Исправляем формат URL если необходимо
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
         
         app.config["SQLALCHEMY_DATABASE_URI"] = database_url
         app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-            "pool_recycle": 300, "pool_pre_ping": True,
+            "pool_recycle": 300, 
+            "pool_pre_ping": True,
         }
         app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
         
@@ -79,12 +89,12 @@ try:
         session_manager = DatabaseSessionManager(app)
         logger.info("Используется менеджер сессий с базой данных")
     else:
-        # Используем in-memory сессии
+        # Используем in-memory сессии если нет URL
         session_manager = DatabaseSessionManager()
-        logger.warning("База данных недоступна. Используются сессии в памяти")
+        logger.warning("URL базы данных не найден. Используются сессии в памяти")
         
-except ImportError:
-    logger.warning("Модуль db_session_manager не найден. Используются сессии в памяти")
+except Exception as e:
+    logger.warning(f"Ошибка инициализации БД: {e}. Используются сессии в памяти")
     # Простое хранилище сессий в памяти (для обратной совместимости)
     user_sessions = {}
 
@@ -298,8 +308,17 @@ def handle_discussion(message):
             # Пользователь новый, продолжаем без ограничений
             pass
         elif user_record.last_discussion_date == today:
-            # Проверяем, использовал ли пользователь бонус за обратную связь
-            if not user_record.feedback_bonus_used:
+            # Проверяем, является ли пользователь администратором
+            username = message.from_user.username if hasattr(message.from_user, 'username') else None
+            is_admin = (username == "avr3lia" or user_id == ADMIN_USERS.get("avr3lia"))
+            
+            # Для администратора не действуют ограничения
+            if is_admin:
+                logger.info(f"Администратор {username} (ID: {user_id}) получил безлимитный доступ")
+                # Продолжаем выполнение без ограничений
+                pass
+            # Для обычных пользователей проверяем лимиты
+            elif not user_record.feedback_bonus_used:
                 # Предлагаем бонус-запрос за фидбек, если пользователь его еще не получал
                 markup = types.InlineKeyboardMarkup()
                 markup.add(
@@ -991,10 +1010,20 @@ def handle_admin_feedback(message):
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
     
     # Проверка на имя пользователя и ID администратора
-    is_admin = username == "avr3lia"  # Явно разрешенное имя пользователя
+    is_admin = False
     
-    if is_admin:
-        logger.info(f"Администратор {username} авторизован по имени пользователя")
+    # Проверяем по имени пользователя
+    if username == "avr3lia":
+        is_admin = True
+        logger.info(f"Администратор {username} авторизован по имени")
+    
+    # Проверяем по ID
+    elif user_id == ADMIN_USERS.get("avr3lia", 0):
+        is_admin = True
+        logger.info(f"Администратор авторизован по ID: {user_id}")
+    
+    # Логгируем результат проверки
+    logger.info(f"Проверка администратора: username={username}, id={user_id}, result={is_admin}")
     
     # Отказываем в доступе неадминистраторам
     if not is_admin:
@@ -1009,15 +1038,36 @@ def handle_admin_feedback(message):
     
     try:
         with app.app_context():
-            # Получаем все записи обратной связи, упорядоченные по времени (последние сначала)
-            # Используем join для получения информации о пользователях
-            feedback_records = db.session.query(
-                Feedback, User.telegram_id, User.username, User.first_name, User.last_name
-            ).join(
-                User, User.id == Feedback.user_id
-            ).order_by(
-                Feedback.timestamp.desc()
-            ).all()
+            # Отладочное сообщение 
+            bot.send_message(
+                message.chat.id,
+                "🔍 Поиск записей обратной связи в базе данных..."
+            )
+            
+            # Получаем все записи обратной связи напрямую
+            feedback_records = []
+            all_feedback = Feedback.query.order_by(Feedback.timestamp.desc()).all()
+            
+            # Добавляем информацию о пользователе для каждой записи
+            for fb in all_feedback:
+                user = User.query.get(fb.user_id)
+                if user:
+                    feedback_records.append((
+                        fb, 
+                        user.telegram_id,
+                        user.username,
+                        user.first_name,
+                        user.last_name
+                    ))
+                else:
+                    # Если пользователь не найден, используем заглушки
+                    feedback_records.append((
+                        fb, 
+                        0,
+                        "unknown",
+                        "Unknown",
+                        "User"
+                    ))
             
             if not feedback_records:
                 # Отправляем сообщение с информацией при отсутствии данных
@@ -1082,18 +1132,16 @@ def handle_admin_feedback(message):
             total_feedback = sum(rating_counts.values())
             report += f"\n*Всего отзывов:* {total_feedback}"
             
-            # Отправляем отчет с форматированием Markdown
+            # Отправляем отчет (без Markdown форматирования для надежности)
             bot.send_message(
                 message.chat.id, 
-                report,
-                parse_mode="Markdown"
+                report
             )
             
-            # Также даем ссылку на веб-интерфейс администратора
+            # Отладочное сообщение для проверки, что мы дошли до этого места
             bot.send_message(
                 message.chat.id,
-                "Вы также можете просмотреть полную информацию на веб-панели: "
-                "http://localhost:5000/admin/feedback"
+                "✅ Отчёт по обратной связи сформирован успешно"
             )
             
     except Exception as e:
@@ -1107,6 +1155,12 @@ def main():
     """Запускает бота."""
     logger.info("Starting Language Mirror bot...")
     print("Bot is running! Press Ctrl+C to stop.")
+    
+    # Инициализируем user_sessions если необходимо
+    global user_sessions, session_manager
+    if 'session_manager' not in globals() and 'user_sessions' not in globals():
+        logger.warning("No session manager available, initializing empty user_sessions")
+        user_sessions = {}
     
     # Принудительно удаляем webhook перед запуском polling
     try:
