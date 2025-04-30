@@ -38,7 +38,7 @@ class OpenRouterClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://example.com"  # Replace with your site's domain
+            "HTTP-Referer": "https://yourdomain.com"  # Replace with your actual domain when deploying
         }
         
         # Prepare messages with system message at the beginning
