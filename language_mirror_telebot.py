@@ -1051,7 +1051,18 @@ def handle_admin_feedback(message):
         logger.info("Пользователю отказано в доступе к команде администратора")
     
     # Дополнительная проверка по переменным окружения, определенным во время запуска
-    if username == os.environ.get("ADMIN_USERNAME") or user_id == int(os.environ.get("ADMIN_USER_ID", "0")):
+    admin_username = os.environ.get("ADMIN_USERNAME", "")
+    admin_user_id_str = os.environ.get("ADMIN_USER_ID", "0")
+    
+    # Безопасное преобразование ID администратора
+    try:
+        admin_user_id = int(admin_user_id_str)
+    except ValueError:
+        admin_user_id = 0
+        logger.error("ADMIN_USER_ID не является числом. Проверьте переменные окружения.")
+    
+    # Улучшенная проверка с учетом регистра имени пользователя
+    if (username and admin_username and username.lower() == admin_username.lower()) or user_id == admin_user_id:
         is_admin = True
         logger.info("Пользователь успешно авторизован как администратор через переменные окружения")
     
