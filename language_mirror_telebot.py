@@ -1500,6 +1500,115 @@ def handle_admin_feedback(message):
         )
         logger.error("Error in admin_feedback function")
 
+# Функция для создания пустого отчета при ошибке базы данных
+def create_empty_report(chat_id):
+    """
+    Создает и отправляет пустой отчет по обратной связи при ошибке подключения к базе данных.
+    
+    Args:
+        chat_id: ID чата для отправки отчета
+    """
+    try:
+        # Отправляем статистический отчет с пустыми значениями
+        logger.info("Создание пустого отчета из-за проблем с базой данных")
+        
+        # Текстовый отчет с информацией об ошибке
+        report = "📊 *Отчет по обратной связи*\n\n"
+        report += "⚠️ *Ошибка подключения к базе данных*\n\n"
+        report += "Не удалось получить данные обратной связи из базы данных. "\
+                "Пожалуйста, проверьте подключение к базе данных и попробуйте снова.\n\n"
+        report += "Возможные причины проблемы:\n"
+        report += "- Неправильный URL базы данных\n"
+        report += "- База данных недоступна или заблокирована\n"
+        report += "- Проблемы с SSL/TLS подключением\n"
+        report += "- Недостаточные права доступа\n\n"
+        report += "Рекомендуется:\n"
+        report += "- Проверить переменную окружения DATABASE_URL\n"
+        report += "- Использовать внутренний URL базы данных для Render.com\n"
+        report += "- Запустить скрипт check_db_connection.py для диагностики\n"
+        
+        # Отправляем отчет с форматированием Markdown
+        bot.send_message(
+            chat_id,
+            report,
+            parse_mode="Markdown"
+        )
+        
+        # Создаем пустой Excel-отчет в случае ошибки
+        try:
+            import os
+            import tempfile
+            import xlsxwriter
+            from datetime import datetime
+            
+            # Создаем временный файл
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            excel_path = os.path.join(tempfile.gettempdir(), f"feedback_report_empty_{timestamp}.xlsx")
+            
+            # Создаем Excel файл с информацией об ошибке
+            workbook = xlsxwriter.Workbook(excel_path)
+            worksheet = workbook.add_worksheet("Обратная связь")
+            
+            # Форматы для заголовков и текста
+            header_format = workbook.add_format({
+                'bold': True,
+                'bg_color': '#D9EAD3',
+                'border': 1,
+                'align': 'center'
+            })
+            
+            error_format = workbook.add_format({
+                'bold': True,
+                'fg_color': '#CC0000',
+                'font_color': 'white',
+                'align': 'center',
+                'valign': 'vcenter'
+            })
+            
+            # Заголовки
+            headers = ["ID", "Пользователь", "Telegram ID", "Оценка", "Комментарий", "Дата"]
+            for col_num, header in enumerate(headers):
+                worksheet.write(0, col_num, header, header_format)
+            
+            # Сообщение об ошибке
+            worksheet.merge_range('A2:F4', "ОШИБКА ПОДКЛЮЧЕНИЯ К БАЗЕ ДАННЫХ", error_format)
+            
+            # Устанавливаем ширину столбцов
+            worksheet.set_column('A:A', 5)   # ID
+            worksheet.set_column('B:B', 20)  # Пользователь
+            worksheet.set_column('C:C', 15)  # Telegram ID
+            worksheet.set_column('D:D', 10)  # Оценка
+            worksheet.set_column('E:E', 40)  # Комментарий
+            worksheet.set_column('F:F', 15)  # Дата
+            
+            workbook.close()
+            
+            # Отправляем файл
+            with open(excel_path, 'rb') as excel_file:
+                bot.send_document(
+                    chat_id,
+                    excel_file,
+                    caption="📊 Отчет по обратной связи (пустой из-за ошибки базы данных)"
+                )
+            
+            # Удаляем временный файл
+            try:
+                os.remove(excel_path)
+            except:
+                pass
+                
+        except Exception as excel_error:
+            logger.error(f"Ошибка при создании пустого Excel-отчета: {str(excel_error)}")
+            bot.send_message(
+                chat_id,
+                f"❌ Не удалось создать Excel-отчет: {str(excel_error)}"
+            )
+    
+    except Exception as e:
+        logger.error(f"Ошибка в функции create_empty_report: {str(e)}")
+        bot.send_message(chat_id, f"❌ Ошибка при создании отчета: {str(e)}")
+
+
 def main():
     """Запускает бота."""
     logger.info("Starting Language Mirror bot...")
