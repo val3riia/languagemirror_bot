@@ -40,8 +40,8 @@ def check_bot_connection():
             error_description = data.get("description", "Неизвестная ошибка")
             logger.error(f"Ошибка при подключении к боту: {error_description}")
             return False
-    except Exception as e:
-        logger.error(f"Ошибка при проверке подключения: {e}")
+    except Exception:
+        logger.error("Ошибка при проверке подключения")
         return False
 
 def check_bot_process():
@@ -80,8 +80,8 @@ def check_bot_process():
             else:
                 logger.warning("Процессы бота не найдены через pgrep")
                 return False
-    except Exception as e:
-        logger.error(f"Ошибка при проверке процесса бота: {e}")
+    except Exception:
+        logger.error("Ошибка при проверке процесса бота")
         return False
 
 def main():

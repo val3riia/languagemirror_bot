@@ -60,10 +60,10 @@ def delete_webhook():
             logger.info("Webhook успешно удален")
             return True
         else:
-            logger.error(f"Ошибка при удалении webhook: {data}")
+            logger.error("Ошибка при удалении webhook")
             return False
-    except Exception as e:
-        logger.error(f"Ошибка при удалении webhook: {e}")
+    except Exception:
+        logger.error("Ошибка при удалении webhook")
         return False
 
 def start_bot():

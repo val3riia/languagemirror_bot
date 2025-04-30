@@ -33,8 +33,8 @@ if not TELEGRAM_TOKEN:
 # Создаем экземпляр бота
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
-# ID администраторов (только avr3lia может использовать этот бот)
-ADMIN_ID = 5783753055
+# ID администраторов из переменных окружения
+ADMIN_ID = int(os.environ.get("ADMIN_USER_ID", "0"))
 
 @bot.message_handler(commands=['start'])
 def handle_start(message):
@@ -175,11 +175,12 @@ def handle_admin_feedback(message):
     except Exception as e:
         bot.send_message(
             message.chat.id, 
-            f"❌ Произошла ошибка при получении данных обратной связи: {str(e)}"
+            "❌ Произошла ошибка при получении данных обратной связи. Проверьте журнал."
         )
-        logger.error(f"Ошибка в admin_feedback: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error("Ошибка в admin_feedback")
+        # Закомментировано для безопасности на GitHub
+        # import traceback
+        # logger.error(traceback.format_exc())
 
 @bot.message_handler(func=lambda message: True)
 def handle_other_messages(message):
@@ -204,16 +205,17 @@ def main():
     try:
         bot.remove_webhook()
         logger.info("Webhook успешно удален")
-    except Exception as e:
-        logger.error(f"Ошибка при удалении webhook: {e}")
+    except Exception:
+        logger.error("Ошибка при удалении webhook")
     
     # Запускаем бота с опросом
     try:
         bot.polling(none_stop=True, interval=0, timeout=20)
-    except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.error("Ошибка при запуске бота")
+        # Закомментировано для безопасности на GitHub
+        # import traceback
+        # logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
