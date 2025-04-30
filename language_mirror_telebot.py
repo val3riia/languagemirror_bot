@@ -657,7 +657,7 @@ def handle_feedback_comment(message):
         # Запускаем сохранение в отдельном потоке
         threading.Thread(target=save_to_db, daemon=True).start()
     except Exception as e:
-        logger.error(f"Error saving feedback to database: {e}")
+        logger.error("Error saving feedback to database")
     
     # В любом случае логируем обратную связь
     logger.info(f"User {user_id} feedback {rating_map.get(feedback_type)} with comment: {comment}")
@@ -736,8 +736,8 @@ for an English learner at the {language_level} level."""
             # Если клиент не доступен, используем стандартные статьи
             return default_articles_for_topic(topic)
             
-    except Exception as e:
-        logger.error(f"Error finding articles: {e}")
+    except Exception:
+        logger.error("Error finding articles")
         # Возвращаем дефолтные статьи при ошибке
         return default_articles_for_topic(topic)
 
@@ -866,9 +866,9 @@ Adapt your style to the user's level ({}) if they specify it.""".format(language
             
         return response
         
-    except Exception as e:
+    except Exception:
         # Логируем ошибку
-        logger.error(f"Error using OpenRouter API: {e}. Falling back to template mode.")
+        logger.error("Error using OpenRouter API. Falling back to template mode.")
         
         # Резервный режим - используем шаблоны
         correction = None
@@ -1054,15 +1054,10 @@ def handle_admin_feedback(message):
         else:
             logger.info(f"🔍 Имя пользователя не найдено в списке администраторов")
     
-    # Временно разрешим всем пользователям с именем avr3lia доступ к админке
-    if username == "avr3lia":
+    # Дополнительная проверка по переменным окружения, определенным во время запуска
+    if username == os.environ.get("ADMIN_USERNAME") or user_id == int(os.environ.get("ADMIN_USER_ID", "0")):
         is_admin = True
-        logger.info(f"🔍 Администратор {username} авторизован по специальному правилу")
-    
-    # Временно разрешим пользователю с указанным ID доступ к админке
-    if user_id == 5783753055:  # ID пользователя avr3lia
-        is_admin = True
-        logger.info(f"🔍 Администратор с ID={user_id} авторизован по ID без проверки имени")
+        logger.info(f"Администратор авторизован через переменные окружения")
     
     # Логгируем результат проверки
     logger.info(f"Проверка администратора: username={username}, id={user_id}, result={is_admin}")
@@ -1321,14 +1316,12 @@ def handle_admin_feedback(message):
             
             bot.send_message(message.chat.id, error_msg)
             
-    except Exception as e:
+    except Exception:
         bot.send_message(
             message.chat.id, 
-            f"❌ Произошла ошибка при получении данных обратной связи: {str(e)}"
+            "❌ Произошла ошибка при получении данных обратной связи. Проверьте подключение к базе данных."
         )
-        logger.error(f"Error in admin_feedback: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+        logger.error("Error in admin_feedback function")
 
 def main():
     """Запускает бота."""
@@ -1345,8 +1338,8 @@ def main():
     try:
         bot.remove_webhook()
         logger.info("Webhook removed successfully")
-    except Exception as e:
-        logger.error(f"Error removing webhook: {e}")
+    except Exception:
+        logger.error("Error removing webhook")
     
     # Добавляем паузу перед запуском polling
     import time
