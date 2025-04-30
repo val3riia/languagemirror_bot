@@ -40,14 +40,13 @@ if database_url:
         logger.info("URL базы данных преобразован из postgres:// в postgresql://")
         
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    # Конфигурация с обязательным SSL для Render.com PostgreSQL
+    # Конфигурация для PostgreSQL с минимальными настройками
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_recycle": 300,
         "pool_pre_ping": True,
-        # Render.com требует SSL/TLS
+        # Render.com требует строгой SSL конфигурации
         "connect_args": {
-            "sslmode": "require",
-            "application_name": "Language Mirror Bot",
+            "sslmode": "require"  # Render.com требует SSL
         }
     }
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -70,7 +69,10 @@ if database_url:
                 import sqlalchemy
                 engine = sqlalchemy.create_engine(
                     database_url,
-                    connect_args={"sslmode": "require"}
+                    connect_args={
+                        "sslmode": "prefer",
+                        "connect_timeout": 10
+                    }
                 )
                 connection = engine.connect()
                 connection.close()

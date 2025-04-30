@@ -1160,9 +1160,12 @@ def handle_admin_feedback(message):
     print("===================== ADMIN FEEDBACK COMMAND STARTED =====================")
     print(f"User ID: {message.from_user.id}, Username: {message.from_user.username}")
     print(f"ADMIN_USERS: {ADMIN_USERS}")
+    print(f"DATABASE_URL настроен: {bool(os.environ.get('DATABASE_URL'))}")
     
     # Логируем начало выполнения команды
     logger.info(f"🔍 Начало обработки команды /admin_feedback")
+    
+    # Сначала сообщаем пользователю, что мы начали обработку
     bot.send_message(message.chat.id, "🔄 Начало обработки команды /admin_feedback...")
     
     user_id = message.from_user.id
@@ -1228,6 +1231,20 @@ def handle_admin_feedback(message):
     bot.send_message(message.chat.id, "🔄 Получение данных обратной связи...")
     
     try:
+        # Проверяем наличие переменной окружения DATABASE_URL
+        database_url = os.environ.get("DATABASE_URL")
+        if not database_url:
+            error_msg = "❌ Ошибка: переменная окружения DATABASE_URL не найдена"
+            logger.error(error_msg)
+            bot.send_message(
+                message.chat.id,
+                error_msg + "\n\nВозможно, нужно настроить подключение к базе данных в переменных окружения."
+            )
+            
+            # Создаем отчет без подключения к базе
+            create_empty_report(message.chat.id)
+            return
+        
         # Импортируем всё, что нужно для доступа к базе данных
         import os
         import sys
@@ -1263,11 +1280,15 @@ def handle_admin_feedback(message):
         except Exception as import_error:
             error_msg = "❌ Ошибка при импорте модулей"
             logger.error(error_msg)
+            print(f"Ошибка импорта: {str(import_error)}")
             # Закомментировано для безопасности на GitHub
             # import traceback
             # logger.error(traceback.format_exc())
             bot.send_message(message.chat.id, error_msg)
-            raise
+            
+            # Создаем отчет без подключения к базе
+            create_empty_report(message.chat.id)
+            return
         
         # Отладочное сообщение 
         logger.info("🔍 Поиск записей обратной связи в базе данных...")
