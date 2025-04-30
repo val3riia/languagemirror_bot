@@ -87,8 +87,8 @@ def start_bot():
         else:
             logger.error(f"Бот не смог запуститься, код возврата: {process.returncode}")
             return False
-    except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
+    except Exception:
+        logger.error("Ошибка при запуске бота")
         return False
 
 def main():

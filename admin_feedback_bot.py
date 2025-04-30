@@ -172,7 +172,7 @@ def handle_admin_feedback(message):
                 "✅ Отчёт по обратной связи сформирован успешно"
             )
             
-    except Exception as e:
+    except Exception:
         bot.send_message(
             message.chat.id, 
             "❌ Произошла ошибка при получении данных обратной связи. Проверьте журнал."

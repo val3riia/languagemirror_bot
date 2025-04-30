@@ -41,7 +41,7 @@ if database_url:
         try:
             db.create_all()
             logger.info("Database tables created successfully")
-        except Exception as e:
+        except Exception:
             logger.error("Error creating database tables. Check your database connection.")
 else:
     logger.error("DATABASE_URL environment variable not set")

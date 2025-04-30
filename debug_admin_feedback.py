@@ -136,10 +136,11 @@ def get_admin_feedback():
             
             return feedback_records
             
-    except Exception as e:
-        logger.error(f"❌ Ошибка при получении данных обратной связи: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.error("❌ Ошибка при получении данных обратной связи")
+        # Закомментировано для безопасности на GitHub
+        # import traceback
+        # logger.error(traceback.format_exc())
 
 def main():
     """Основная функция."""

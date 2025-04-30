@@ -40,10 +40,11 @@ def main():
         run_bot()
         
         return True
-    except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.error("Ошибка при запуске бота")
+        # Закомментировано для безопасности на GitHub
+        # import traceback
+        # logger.error(traceback.format_exc())
         return False
 
 if __name__ == "__main__":
