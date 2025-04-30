@@ -40,9 +40,15 @@ if database_url:
         logger.info("URL базы данных преобразован из postgres:// в postgresql://")
         
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
+    # Конфигурация с обязательным SSL для Render.com PostgreSQL
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_recycle": 300,
         "pool_pre_ping": True,
+        # Render.com требует SSL/TLS
+        "connect_args": {
+            "sslmode": "require",
+            "application_name": "Language Mirror Bot",
+        }
     }
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
     # Добавляем детальное логирование SQL-запросов при отладке
@@ -62,12 +68,19 @@ if database_url:
             # Проверка основных атрибутов подключения
             try:
                 import sqlalchemy
-                engine = sqlalchemy.create_engine(database_url)
+                engine = sqlalchemy.create_engine(
+                    database_url,
+                    connect_args={"sslmode": "require"}
+                )
                 connection = engine.connect()
                 connection.close()
                 logger.info("Проверка подключения к базе данных прошла успешно!")
             except Exception as conn_error:
                 logger.error(f"Не удалось подключиться к базе данных: {str(conn_error)}")
+                logger.error("Проверьте также, что ваша база данных доступна из интернета и не заблокирована файрволом.")
+                # Попробуем проверить внутренний URL
+                if "internal" not in database_url and "private" not in database_url:
+                    logger.warning("Возможно, вы используете внешний URL базы данных. В Render.com лучше использовать внутренний URL (Internal Database URL).")
 else:
     logger.error("DATABASE_URL environment variable not set. Bot будет работать с ограниченной функциональностью.")
 
