@@ -222,8 +222,32 @@ def handle_start(message):
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
     user_id = message.from_user.id
     
-    # Проверяем по имени пользователя и ID
-    is_admin = username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id
+    # Получаем admin_username и admin_user_id из переменных окружения
+    admin_username = os.environ.get("ADMIN_USERNAME", "")
+    admin_user_id_str = os.environ.get("ADMIN_USER_ID", "0")
+    
+    # Безопасное преобразование ID администратора
+    try:
+        admin_user_id = int(admin_user_id_str)
+    except ValueError:
+        admin_user_id = 0
+        logger.error("ADMIN_USER_ID не является числом. Проверьте переменные окружения.")
+    
+    # Проверка администратора
+    is_admin = False
+    
+    # Проверка через словарь ADMIN_USERS
+    if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
+        is_admin = True
+        logger.info(f"Пользователь {username} авторизован через ADMIN_USERS")
+    
+    # Проверка через переменные окружения (с учетом регистра)
+    if (username and admin_username and username.lower() == admin_username.lower()) or user_id == admin_user_id:
+        is_admin = True
+        logger.info(f"Пользователь авторизован через переменные окружения")
+        
+    if DEBUG_MODE:
+        logger.info(f"DEBUG: username={username}, user_id={user_id}, admin_username={admin_username}, admin_user_id={admin_user_id}, is_admin={is_admin}")
     
     if is_admin:
         # Добавляем кнопку администратора
@@ -333,7 +357,28 @@ def handle_discussion(message):
         elif user_record.last_discussion_date == today:
             # Проверяем, является ли пользователь администратором
             username = message.from_user.username if hasattr(message.from_user, 'username') else None
-            is_admin = username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id
+            
+            # Получаем admin_username и admin_user_id из переменных окружения
+            admin_username = os.environ.get("ADMIN_USERNAME", "")
+            admin_user_id_str = os.environ.get("ADMIN_USER_ID", "0")
+            
+            # Безопасное преобразование ID администратора
+            try:
+                admin_user_id = int(admin_user_id_str)
+            except ValueError:
+                admin_user_id = 0
+                logger.error("ADMIN_USER_ID не является числом. Проверьте переменные окружения.")
+            
+            # Проверка через словарь ADMIN_USERS
+            is_admin = False
+            if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
+                is_admin = True
+                logger.info(f"Пользователь {username} авторизован как администратор через ADMIN_USERS")
+            
+            # Проверка через переменные окружения (с учетом регистра)
+            if (username and admin_username and username.lower() == admin_username.lower()) or user_id == admin_user_id:
+                is_admin = True
+                logger.info(f"Пользователь авторизован как администратор через переменные окружения")
             
             # Для администратора не действуют ограничения
             if is_admin:

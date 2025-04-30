@@ -66,13 +66,23 @@ def start_bot_thread():
         # logger.error(traceback.format_exc())
 
 # Проверяем наличие переменной окружения BOT_AUTO_START
-if os.environ.get("BOT_AUTO_START", "False").lower() == "true" and os.environ.get("TELEGRAM_TOKEN"):
-    # Запускаем бота в отдельном потоке, только если установлен флаг BOT_AUTO_START
+bot_auto_start = os.environ.get("BOT_AUTO_START", "False").lower() == "true"
+has_telegram_token = bool(os.environ.get("TELEGRAM_TOKEN"))
+database_configured = bool(database_url)
+
+if bot_auto_start and has_telegram_token:
+    # Запускаем бота в отдельном потоке, только если установлен флаг BOT_AUTO_START и есть токен
     bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
     bot_thread.start()
     logger.info("Bot thread started successfully (automatic start enabled)")
+    
+    if not database_configured:
+        logger.warning("Database not configured properly. Bot may have limited functionality.")
 else:
-    logger.warning("Automatic bot startup disabled. Set BOT_AUTO_START=True to enable.")
+    if not bot_auto_start:
+        logger.info("Automatic bot startup disabled. Set BOT_AUTO_START=True to enable.")
+    if not has_telegram_token:
+        logger.warning("TELEGRAM_TOKEN environment variable is not set. Bot cannot start.")
 
 @app.route('/')
 def index():
