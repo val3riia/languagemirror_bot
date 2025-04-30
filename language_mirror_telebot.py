@@ -1156,6 +1156,11 @@ def handle_admin_feedback(message):
     # Принудительно включаем отладочный режим для этой функции
     debug_this_function = True
     
+    # Печатаем в консоль для диагностики
+    print("===================== ADMIN FEEDBACK COMMAND STARTED =====================")
+    print(f"User ID: {message.from_user.id}, Username: {message.from_user.username}")
+    print(f"ADMIN_USERS: {ADMIN_USERS}")
+    
     # Логируем начало выполнения команды
     logger.info(f"🔍 Начало обработки команды /admin_feedback")
     bot.send_message(message.chat.id, "🔄 Начало обработки команды /admin_feedback...")

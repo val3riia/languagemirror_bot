@@ -133,24 +133,42 @@ def create_simple_feedback_excel(feedback_records, filename: Optional[str] = Non
     Returns:
         Путь к созданному временному файлу Excel
     """
+    print("===================== EXCEL REPORT GENERATION STARTED =====================")
+    print(f"Received {len(feedback_records)} feedback records")
+    logger.info(f"Получено {len(feedback_records)} записей обратной связи для отчета")
+    
     # Преобразуем в формат, подходящий для основной функции
     feedback_data = []
     
-    for record, telegram_id, username, first_name, last_name in feedback_records:
-        # Формируем имя пользователя для отображения
-        user_display = username or first_name or f"User {telegram_id}"
+    try:
+        for record, telegram_id, username, first_name, last_name in feedback_records:
+            # Формируем имя пользователя для отображения
+            user_display = username or first_name or f"User {telegram_id}"
+            
+            print(f"Processing record: ID={record.id}, Rating={record.rating}, User={user_display}")
+            
+            feedback_data.append({
+                "id": record.id,
+                "rating": record.rating,
+                "comment": record.comment,
+                "timestamp": record.timestamp,
+                "user_id": telegram_id,
+                "username": user_display,
+                "first_name": first_name,
+                "last_name": last_name
+            })
         
-        feedback_data.append({
-            "id": record.id,
-            "rating": record.rating,
-            "comment": record.comment,
-            "timestamp": record.timestamp,
-            "user_id": telegram_id,
-            "username": user_display,
-            "first_name": first_name,
-            "last_name": last_name
-        })
-    
-    # Используем основную функцию для создания Excel
-    temp_path, _ = create_feedback_excel(feedback_data, filename)
-    return temp_path
+        print(f"Transformed {len(feedback_data)} records for Excel report")
+        logger.info(f"Подготовлено {len(feedback_data)} записей для Excel отчета")
+        
+        # Используем основную функцию для создания Excel
+        print("Calling create_feedback_excel function...")
+        temp_path, _ = create_feedback_excel(feedback_data, filename)
+        print(f"Excel report created at: {temp_path}")
+        
+        return temp_path
+    except Exception as e:
+        print(f"ERROR in create_simple_feedback_excel: {str(e)}")
+        logger.error(f"Ошибка в create_simple_feedback_excel: {str(e)}")
+        # Перезапускаем исключение, чтобы верхний уровень мог его обработать
+        raise
