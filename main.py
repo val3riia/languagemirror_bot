@@ -112,16 +112,23 @@ logger.info(f"BOT_AUTO_START={bot_auto_start_value} (интерпретиров�
 has_telegram_token = bool(os.environ.get("TELEGRAM_TOKEN"))
 database_configured = bool(database_url)
 
-if bot_auto_start and has_telegram_token:
-    # Запускаем бота в отдельном потоке, только если установлен флаг BOT_AUTO_START и есть токен
+# Временно принудительно активируем автозапуск для отладки
+forced_auto_start = True
+
+if (bot_auto_start or forced_auto_start) and has_telegram_token:
+    # Запускаем бота в отдельном потоке, флаг BOT_AUTO_START или форсирован, и есть токен
     bot_thread = threading.Thread(target=start_bot_thread, daemon=True)
     bot_thread.start()
-    logger.info("Bot thread started successfully (automatic start enabled)")
+    
+    if forced_auto_start and not bot_auto_start:
+        logger.info("Bot thread started due to forced_auto_start=True (for debugging)")
+    else:
+        logger.info("Bot thread started successfully (automatic start enabled)")
     
     if not database_configured:
-        logger.warning("Database not configured properly. Bot may have limited functionality.")
+        logger.warning("Database not configured properly. Bot will work with limited functionality.")
 else:
-    if not bot_auto_start:
+    if not bot_auto_start and not forced_auto_start:
         logger.info("Automatic bot startup disabled. Set BOT_AUTO_START=True to enable.")
     if not has_telegram_token:
         logger.warning("TELEGRAM_TOKEN environment variable is not set. Bot cannot start.")
