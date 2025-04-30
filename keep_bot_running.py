@@ -54,8 +54,8 @@ def start_bot():
         logger.info(f"Бот запущен с PID: {process.pid}")
         return process
     
-    except Exception as e:
-        logger.error(f"Ошибка при запуске бота: {e}")
+    except Exception:
+        logger.error("Ошибка при запуске бота")
         return None
 
 # Функция для остановки всех существующих процессов бота
@@ -99,11 +99,11 @@ def stop_existing_bots():
                 check=False
             )
             logger.info("Остановлены все процессы с именем 'python.*language_mirror.*'")
-        except Exception as e:
-            logger.error(f"Ошибка при остановке процессов по имени: {e}")
+        except Exception:
+            logger.error("Ошибка при остановке процессов по имени")
     
-    except Exception as e:
-        logger.error(f"Ошибка при остановке существующих ботов: {e}")
+    except Exception:
+        logger.error("Ошибка при остановке существующих ботов")
 
 def main():
     """Основная функция для запуска и мониторинга бота"""
@@ -165,9 +165,9 @@ def main():
         
         print("✅ Бот остановлен")
     
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка в мониторинге: {e}")
-        print(f"❌ Неожиданная ошибка: {e}")
+    except Exception:
+        logger.error("Неожиданная ошибка в мониторинге")
+        print("❌ Неожиданная ошибка при мониторинге бота. Проверьте лог-файл.")
         
         # Останавливаем бота при ошибке
         if bot_process:

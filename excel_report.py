@@ -115,10 +115,11 @@ def create_feedback_excel(feedback_data: List[Dict[str, Any]], filename: Optiona
         logger.info(f"Excel отчет создан успешно в памяти и временном файле: {temp_path}")
         return temp_path, filename
         
-    except Exception as e:
-        logger.error(f"Ошибка при создании Excel-отчета: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.error("Ошибка при создании Excel-отчета")
+        # Закомментировано для безопасности на GitHub
+        # import traceback
+        # logger.error(traceback.format_exc())
         raise
         
 def create_simple_feedback_excel(feedback_records, filename: Optional[str] = None) -> str:
