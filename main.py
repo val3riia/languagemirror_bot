@@ -44,9 +44,13 @@ if database_url:
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
         "pool_recycle": 300,
         "pool_pre_ping": True,
-        # Render.com требует строгой SSL конфигурации
+        # Настройки для Render.com PostgreSQL
         "connect_args": {
-            "sslmode": "require"  # Render.com требует SSL
+            "sslmode": "require",  # Render.com требует SSL
+            "connect_timeout": 30,  # Увеличиваем таймаут подключения
+            "keepalives": 1,        # Держим соединение активным
+            "keepalives_idle": 30,  # Проверка активности каждые 30 секунд
+            "keepalives_interval": 10  # Интервал повторной проверки 10 секунд
         }
     }
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -70,8 +74,8 @@ if database_url:
                 engine = sqlalchemy.create_engine(
                     database_url,
                     connect_args={
-                        "sslmode": "prefer",
-                        "connect_timeout": 10
+                        "sslmode": "require",
+                        "connect_timeout": 30
                     }
                 )
                 connection = engine.connect()
