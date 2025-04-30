@@ -42,7 +42,7 @@ if database_url:
             db.create_all()
             logger.info("Database tables created successfully")
         except Exception as e:
-            logger.error(f"Error creating database tables: {e}")
+            logger.error("Error creating database tables. Check your database connection.")
 else:
     logger.error("DATABASE_URL environment variable not set")
 
@@ -111,8 +111,8 @@ def get_feedback():
             })
         
         return jsonify(result)
-    except Exception as e:
-        logger.error(f"Error getting feedback: {e}")
+    except Exception:
+        logger.error("Error getting feedback. Check your database connection.")
         # В случае ошибки базы данных, возвращаем данные из памяти
         return jsonify(feedback_data)
 
@@ -164,9 +164,9 @@ def add_feedback():
         feedback_data.append(feedback_item)
         return jsonify({"success": True, "id": feedback_item["id"]}), 201
         
-    except Exception as e:
-        logger.error(f"Error adding feedback: {e}")
-        return jsonify({"error": str(e)}), 500
+    except Exception:
+        logger.error("Error adding feedback. Check your database connection.")
+        return jsonify({"error": "Database error occurred while adding feedback"}), 500
 
 @app.errorhandler(404)
 def page_not_found(e):

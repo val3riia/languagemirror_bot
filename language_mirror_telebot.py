@@ -54,9 +54,8 @@ ADMIN_USERS = {}
 if ADMIN_USERNAME and ADMIN_USER_ID and ADMIN_USER_ID.isdigit():
     ADMIN_USERS[ADMIN_USERNAME] = int(ADMIN_USER_ID)
 
-# Добавляем администратора avr3lia напрямую в код
-# В будущем нужно перенести этот список в .env или другую конфигурацию
-ADMIN_USERS["avr3lia"] = 5783753055  # ID пользователя avr3lia
+# Список администраторов должен быть получен из переменных окружения
+# Формат: ADMIN_USERNAME=username и ADMIN_USER_ID=user_id
 
 # Для отладки выводим список администраторов в лог
 logger.info(f"Список администраторов: {ADMIN_USERS}")
@@ -109,8 +108,8 @@ try:
         session_manager = DatabaseSessionManager()
         logger.warning("URL базы данных не найден. Используются сессии в памяти")
         
-except Exception as e:
-    logger.warning(f"Ошибка инициализации БД: {e}. Используются сессии в памяти")
+except Exception:
+    logger.warning("Ошибка инициализации базы данных. Используются сессии в памяти")
     # Простое хранилище сессий в памяти (для обратной совместимости)
     user_sessions = {}
 
@@ -273,8 +272,8 @@ def handle_start(message):
                 # Обновляем дату последней активности
                 user_record.last_activity = datetime.utcnow()
                 db.session.commit()
-    except Exception as e:
-        logger.error(f"Error updating user in database: {e}")
+    except Exception:
+        logger.error("Error updating user in database")
 
 @bot.message_handler(commands=['discussion'])
 def handle_discussion(message):
