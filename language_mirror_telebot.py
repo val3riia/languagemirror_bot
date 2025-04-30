@@ -1182,10 +1182,11 @@ def handle_admin_feedback(message):
             logger.info(f"Вышли из контекста Flask app, получили {len(feedback_records)} записей обратной связи")
             
         except Exception as context_error:
-            error_msg = f"❌ Ошибка при работе с контекстом Flask app: {str(context_error)}"
+            error_msg = "❌ Ошибка при работе с контекстом Flask app"
             logger.error(error_msg)
-            import traceback
-            logger.error(traceback.format_exc())
+            # Закомментировано для безопасности на GitHub
+            # import traceback
+            # logger.error(traceback.format_exc())
             
             # Добавляем больше контекста об ошибке
             debug_msg = f"Прогресс выполнения: context={got_context}, feedback={got_feedback}, users={processed_users}"
@@ -1295,13 +1296,14 @@ def handle_admin_feedback(message):
                 logger.info(f"Excel-отчет успешно отправлен: {excel_path}")
                 
             except Exception as excel_error:
-                logger.error(f"Ошибка при создании Excel-отчета: {excel_error}")
-                import traceback
-                logger.error(traceback.format_exc())
+                logger.error("Ошибка при создании Excel-отчета")
+                # Закомментировано для безопасности на GitHub
+                # import traceback
+                # logger.error(traceback.format_exc())
                 
                 bot.send_message(
                     message.chat.id,
-                    f"❌ Не удалось создать Excel-отчет: {str(excel_error)}"
+                    "❌ Не удалось создать Excel-отчет. Проверьте журнал для деталей."
                 )
                 
             # Отладочное сообщение для проверки, что мы дошли до этого места
@@ -1311,10 +1313,11 @@ def handle_admin_feedback(message):
             )
             
         except Exception as e:
-            error_msg = f"❌ Ошибка при формировании отчета: {str(e)}"
+            error_msg = "❌ Ошибка при формировании отчета"
             logger.error(error_msg)
-            import traceback
-            logger.error(traceback.format_exc())
+            # Закомментировано для безопасности на GitHub
+            # import traceback
+            # logger.error(traceback.format_exc())
             
             bot.send_message(message.chat.id, error_msg)
             
