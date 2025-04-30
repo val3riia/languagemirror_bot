@@ -22,9 +22,22 @@ app = Flask(__name__, static_url_path='/static', static_folder='static')
 # Configure database
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
+    # Маскируем пароль для логов (например postgresql://user:pass@host:port/dbname)
+    masked_url = database_url
+    if "@" in database_url:
+        parts = database_url.split("@")
+        user_pass = parts[0].split("://")[1]
+        if ":" in user_pass:
+            # Заменяем пароль на ***
+            user = user_pass.split(":")[0]
+            masked_url = database_url.replace(user_pass, f"{user}:***")
+        
+    logger.info(f"Используется база данных: {masked_url}")
+    
     # Fix potential postgres:// vs postgresql:// URLs
     if database_url.startswith("postgres://"):
         database_url = database_url.replace("postgres://", "postgresql://", 1)
+        logger.info("URL базы данных преобразован из postgres:// в postgresql://")
         
     app.config["SQLALCHEMY_DATABASE_URI"] = database_url
     app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
@@ -32,6 +45,8 @@ if database_url:
         "pool_pre_ping": True,
     }
     app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+    # Добавляем детальное логирование SQL-запросов при отладке
+    app.config["SQLALCHEMY_ECHO"] = os.environ.get("DEBUG", "False").lower() in ["true", "1", "yes"]
     
     # Initialize database with app
     db.init_app(app)
@@ -41,10 +56,20 @@ if database_url:
         try:
             db.create_all()
             logger.info("Database tables created successfully")
-        except Exception:
-            logger.error("Error creating database tables. Check your database connection.")
+        except Exception as e:
+            logger.error(f"Error creating database tables: {str(e)}")
+            logger.error("Check your DATABASE_URL. Правильный формат: postgresql://username:password@hostname:port/database_name")
+            # Проверка основных атрибутов подключения
+            try:
+                import sqlalchemy
+                engine = sqlalchemy.create_engine(database_url)
+                connection = engine.connect()
+                connection.close()
+                logger.info("Проверка подключения к базе данных прошла успешно!")
+            except Exception as conn_error:
+                logger.error(f"Не удалось подключиться к базе данных: {str(conn_error)}")
 else:
-    logger.error("DATABASE_URL environment variable not set")
+    logger.error("DATABASE_URL environment variable not set. Bot будет работать с ограниченной функциональностью.")
 
 # Temporary storage for feedback data (for backward compatibility)
 feedback_data = []
@@ -66,7 +91,11 @@ def start_bot_thread():
         # logger.error(traceback.format_exc())
 
 # Проверяем наличие переменной окружения BOT_AUTO_START
-bot_auto_start = os.environ.get("BOT_AUTO_START", "False").lower() == "true"
+bot_auto_start_value = os.environ.get("BOT_AUTO_START", "False").strip().lower()
+# Принимаем различные варианты "истинных" значений
+bot_auto_start = bot_auto_start_value in ["true", "yes", "1", "on", "t", "y"]
+logger.info(f"BOT_AUTO_START={bot_auto_start_value} (интерпретировано как {bot_auto_start})")
+
 has_telegram_token = bool(os.environ.get("TELEGRAM_TOKEN"))
 database_configured = bool(database_url)
 
