@@ -93,12 +93,43 @@ def start_bot_thread():
         # Wait a bit to ensure Flask app is fully initialized
         time.sleep(2)
         
+        # Сначала решаем проблему конфликтов ботов
+        try:
+            logger.info("Removing Telegram webhook to prevent conflicts...")
+            # Получение токена
+            token = os.environ.get("TELEGRAM_TOKEN")
+            if token:
+                # Делаем запрос к API Telegram для удаления webhook
+                import requests
+                response = requests.get(f"https://api.telegram.org/bot{token}/deleteWebhook")
+                if response.status_code == 200 and response.json().get("ok", False):
+                    logger.info("Webhook successfully removed")
+                else:
+                    logger.warning(f"Failed to remove webhook: {response.text}")
+            else:
+                logger.warning("No TELEGRAM_TOKEN found, can't remove webhook")
+            
+            # Ждем немного после удаления webhook
+            time.sleep(1)
+        except Exception as webhook_error:
+            logger.error(f"Error removing webhook: {webhook_error}")
+        
         # Import runs in thread to avoid blocking web server
-        from language_mirror_telebot import main as run_bot
+        from language_mirror_telebot import main as run_bot, bot
+        
+        # Еще раз удаляем webhook через объект бота
+        try:
+            bot.remove_webhook()
+            logger.info("Webhook removed through bot.remove_webhook()")
+            time.sleep(1)
+        except Exception as bot_webhook_error:
+            logger.error(f"Error removing webhook via bot: {bot_webhook_error}")
+        
+        # Запускаем бота
         logger.info("Starting bot in background thread...")
         run_bot()
-    except Exception:
-        logger.error("Error starting bot thread")
+    except Exception as e:
+        logger.error(f"Error starting bot thread: {e}")
         # Uncomment for debug
         # import traceback
         # logger.error(traceback.format_exc())

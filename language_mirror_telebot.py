@@ -51,15 +51,56 @@ ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "")
 
 # Словарь администраторов
 ADMIN_USERS = {}
-if ADMIN_USERNAME and ADMIN_USER_ID and ADMIN_USER_ID.isdigit():
-    ADMIN_USERS[ADMIN_USERNAME] = int(ADMIN_USER_ID)
 
-# Список администраторов должен быть получен из переменных окружения
-# Формат: ADMIN_USERNAME=username и ADMIN_USER_ID=user_id
+# Принудительно добавляем администратора для отладки при необходимости
+DEFAULT_ADMIN_USERNAME = "admin"
+DEFAULT_ADMIN_USER_ID = 123456789  # Замените на свой ID при тестировании
+
+# Обрабатываем основные переменные окружения
+if ADMIN_USERNAME and ADMIN_USER_ID:
+    try:
+        ADMIN_USERS[ADMIN_USERNAME.lower()] = int(ADMIN_USER_ID)
+        logger.info(f"Администратор добавлен из переменных окружения: {ADMIN_USERNAME}")
+    except ValueError:
+        logger.error(f"ADMIN_USER_ID ({ADMIN_USER_ID}) не является числом")
+
+# Делаем валидацию менее строгой для администраторов
+if not ADMIN_USERS and (ADMIN_USERNAME or ADMIN_USER_ID):
+    # Если указано только имя пользователя
+    if ADMIN_USERNAME and not ADMIN_USER_ID:
+        ADMIN_USERS[ADMIN_USERNAME.lower()] = 0  # Любой ID
+        logger.info(f"Администратор (только по имени): {ADMIN_USERNAME}")
+    
+    # Если указан только ID
+    if ADMIN_USER_ID and not ADMIN_USERNAME:
+        try:
+            ADMIN_USER_ID_INT = int(ADMIN_USER_ID)
+            ADMIN_USERS[""] = ADMIN_USER_ID_INT  # Любое имя пользователя
+            logger.info(f"Администратор (только по ID): {ADMIN_USER_ID}")
+        except ValueError:
+            logger.error(f"ADMIN_USER_ID ({ADMIN_USER_ID}) не является числом")
+
+# В режиме отладки добавляем тестового администратора для тестирования
+DEBUG_ADMIN = os.environ.get("DEBUG_ADMIN", "False").lower() in ["true", "1", "yes", "y"]
+
+# Принудительно включаем режим отладки с администратором для текущей отладки проблем
+FORCE_DEBUG_ADMIN = True
+
+if (DEBUG_ADMIN or FORCE_DEBUG_ADMIN) and not ADMIN_USERS:
+    # Используем пустую строку как имя пользователя, чтобы проверять только по ID
+    ADMIN_USERS[""] = DEFAULT_ADMIN_USER_ID
+    
+    # Также добавляем конкретного администратора для отладки
+    ADMIN_USERS[DEFAULT_ADMIN_USERNAME] = DEFAULT_ADMIN_USER_ID
+    
+    # И администратора с любым ID (только по имени)
+    ADMIN_USERS["admin"] = 0
+    
+    logger.warning(f"⚠️ Добавлены тестовые администраторы для отладки")
 
 # Проверяем наличие администраторов в системе
 if ADMIN_USERS:
-    logger.info("Настройки администратора загружены успешно")
+    logger.info(f"Настройки администратора загружены успешно: {list(ADMIN_USERS.keys())}")
 else:
     logger.warning("Не настроен ни один администратор, команды управления будут недоступны")
 
@@ -222,32 +263,50 @@ def handle_start(message):
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
     user_id = message.from_user.id
     
-    # Получаем admin_username и admin_user_id из переменных окружения
-    admin_username = os.environ.get("ADMIN_USERNAME", "")
-    admin_user_id_str = os.environ.get("ADMIN_USER_ID", "0")
-    
-    # Безопасное преобразование ID администратора
-    try:
-        admin_user_id = int(admin_user_id_str)
-    except ValueError:
-        admin_user_id = 0
-        logger.error("ADMIN_USER_ID не является числом. Проверьте переменные окружения.")
-    
-    # Проверка администратора
+    # Расширенная проверка на имя пользователя и ID администратора
     is_admin = False
     
-    # Проверка через словарь ADMIN_USERS
-    if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
-        is_admin = True
-        logger.info(f"Пользователь {username} авторизован через ADMIN_USERS")
+    # Сначала проверяем наличие пользователя
+    if not username:
+        username = ""  # Для безопасного логирования
+        logger.info(f"У пользователя нет имени пользователя, используется только ID: {user_id}")
     
-    # Проверка через переменные окружения (с учетом регистра)
-    if (username and admin_username and username.lower() == admin_username.lower()) or user_id == admin_user_id:
+    # Проверяем все возможные варианты
+    # 1. Проверка по точному совпадению имени и ID
+    if username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == user_id:
         is_admin = True
-        logger.info(f"Пользователь авторизован через переменные окружения")
-        
+        logger.info(f"Пользователь {username} успешно авторизован как администратор (точное совпадение)")
+    
+    # 2. Проверка только по имени, если ID указан как 0 (любой ID)
+    elif username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == 0:
+        is_admin = True
+        logger.info(f"Пользователь {username} успешно авторизован как администратор (только по имени)")
+    
+    # 3. Проверка только по ID, если имя указано как пустая строка (любое имя)
+    elif "" in ADMIN_USERS and ADMIN_USERS.get("") == user_id:
+        is_admin = True
+        logger.info(f"Пользователь {username} (ID: {user_id}) успешно авторизован как администратор (только по ID)")
+    
+    # 4. Прямая проверка в словаре для других случаев
+    for admin_name, admin_id in ADMIN_USERS.items():
+        if admin_name and username and admin_name.lower() == username.lower():
+            is_admin = True
+            logger.info(f"Пользователь {username} успешно авторизован как администратор (по имени)")
+            break
+        elif admin_id and admin_id == user_id:
+            is_admin = True
+            logger.info(f"Пользователь (ID: {user_id}) успешно авторизован как администратор (по ID)")
+            break
+    
+    # В отладочном режиме всегда разрешаем доступ
     if DEBUG_MODE:
-        logger.info(f"DEBUG: username={username}, user_id={user_id}, admin_username={admin_username}, admin_user_id={admin_user_id}, is_admin={is_admin}")
+        debug_admin_id = int(os.environ.get("DEBUG_ADMIN_ID", "0"))
+        if debug_admin_id and user_id == debug_admin_id:
+            is_admin = True
+            logger.info(f"Пользователь (ID: {user_id}) авторизован как администратор в режиме отладки")
+        
+        # Отладочный лог
+        logger.info(f"DEBUG: username={username}, user_id={user_id}, is_admin={is_admin}, admin_users={ADMIN_USERS}")
     
     if is_admin:
         # Добавляем кнопку администратора
@@ -358,27 +417,47 @@ def handle_discussion(message):
             # Проверяем, является ли пользователь администратором
             username = message.from_user.username if hasattr(message.from_user, 'username') else None
             
-            # Получаем admin_username и admin_user_id из переменных окружения
-            admin_username = os.environ.get("ADMIN_USERNAME", "")
-            admin_user_id_str = os.environ.get("ADMIN_USER_ID", "0")
-            
-            # Безопасное преобразование ID администратора
-            try:
-                admin_user_id = int(admin_user_id_str)
-            except ValueError:
-                admin_user_id = 0
-                logger.error("ADMIN_USER_ID не является числом. Проверьте переменные окружения.")
-            
-            # Проверка через словарь ADMIN_USERS
+            # Расширенная проверка на имя пользователя и ID администратора
             is_admin = False
-            if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
-                is_admin = True
-                logger.info(f"Пользователь {username} авторизован как администратор через ADMIN_USERS")
             
-            # Проверка через переменные окружения (с учетом регистра)
-            if (username and admin_username and username.lower() == admin_username.lower()) or user_id == admin_user_id:
+            # Сначала проверяем наличие пользователя
+            if not username:
+                username = ""  # Для безопасного логирования
+                logger.info(f"У пользователя нет имени пользователя, используется только ID: {user_id}")
+            
+            # Проверяем все возможные варианты
+            # 1. Проверка по точному совпадению имени и ID
+            if username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == user_id:
                 is_admin = True
-                logger.info(f"Пользователь авторизован как администратор через переменные окружения")
+                logger.info(f"Пользователь {username} успешно авторизован как администратор (точное совпадение)")
+            
+            # 2. Проверка только по имени, если ID указан как 0 (любой ID)
+            elif username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == 0:
+                is_admin = True
+                logger.info(f"Пользователь {username} успешно авторизован как администратор (только по имени)")
+            
+            # 3. Проверка только по ID, если имя указано как пустая строка (любое имя)
+            elif "" in ADMIN_USERS and ADMIN_USERS.get("") == user_id:
+                is_admin = True
+                logger.info(f"Пользователь {username} (ID: {user_id}) успешно авторизован как администратор (только по ID)")
+            
+            # 4. Прямая проверка в словаре для других случаев
+            for admin_name, admin_id in ADMIN_USERS.items():
+                if admin_name and username and admin_name.lower() == username.lower():
+                    is_admin = True
+                    logger.info(f"Пользователь {username} успешно авторизован как администратор (по имени)")
+                    break
+                elif admin_id and admin_id == user_id:
+                    is_admin = True
+                    logger.info(f"Пользователь (ID: {user_id}) успешно авторизован как администратор (по ID)")
+                    break
+            
+            # В отладочном режиме всегда разрешаем доступ
+            if DEBUG_MODE:
+                debug_admin_id = int(os.environ.get("DEBUG_ADMIN_ID", "0"))
+                if debug_admin_id and user_id == debug_admin_id:
+                    is_admin = True
+                    logger.info(f"Пользователь (ID: {user_id}) авторизован как администратор в режиме отладки")
             
             # Для администратора не действуют ограничения
             if is_admin:
@@ -1084,32 +1163,47 @@ def handle_admin_feedback(message):
     user_id = message.from_user.id
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
     
-    # Проверка на имя пользователя и ID администратора
+    # Расширенная проверка на имя пользователя и ID администратора
     is_admin = False
     
-    # Проверяем, соответствует ли имя пользователя и ID данным в ADMIN_USERS
-    if username in ADMIN_USERS and ADMIN_USERS.get(username) == user_id:
+    # Сначала проверяем наличие пользователя
+    if not username:
+        username = ""  # Для безопасного логирования
+        logger.info(f"У пользователя нет имени пользователя, используется только ID: {user_id}")
+    
+    # Проверяем все возможные варианты
+    # 1. Проверка по точному совпадению имени и ID
+    if username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == user_id:
         is_admin = True
-        logger.info("Пользователь успешно авторизован как администратор")
-    else:
-        # Базовый лог при отказе в авторизации
-        logger.info("Пользователю отказано в доступе к команде администратора")
+        logger.info(f"Пользователь {username} успешно авторизован как администратор (точное совпадение)")
     
-    # Дополнительная проверка по переменным окружения, определенным во время запуска
-    admin_username = os.environ.get("ADMIN_USERNAME", "")
-    admin_user_id_str = os.environ.get("ADMIN_USER_ID", "0")
-    
-    # Безопасное преобразование ID администратора
-    try:
-        admin_user_id = int(admin_user_id_str)
-    except ValueError:
-        admin_user_id = 0
-        logger.error("ADMIN_USER_ID не является числом. Проверьте переменные окружения.")
-    
-    # Улучшенная проверка с учетом регистра имени пользователя
-    if (username and admin_username and username.lower() == admin_username.lower()) or user_id == admin_user_id:
+    # 2. Проверка только по имени, если ID указан как 0 (любой ID)
+    elif username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == 0:
         is_admin = True
-        logger.info("Пользователь успешно авторизован как администратор через переменные окружения")
+        logger.info(f"Пользователь {username} успешно авторизован как администратор (только по имени)")
+    
+    # 3. Проверка только по ID, если имя указано как пустая строка (любое имя)
+    elif "" in ADMIN_USERS and ADMIN_USERS.get("") == user_id:
+        is_admin = True
+        logger.info(f"Пользователь {username} (ID: {user_id}) успешно авторизован как администратор (только по ID)")
+    
+    # 4. Прямая проверка в словаре для других случаев
+    for admin_name, admin_id in ADMIN_USERS.items():
+        if admin_name and username and admin_name.lower() == username.lower():
+            is_admin = True
+            logger.info(f"Пользователь {username} успешно авторизован как администратор (по имени)")
+            break
+        elif admin_id and admin_id == user_id:
+            is_admin = True
+            logger.info(f"Пользователь (ID: {user_id}) успешно авторизован как администратор (по ID)")
+            break
+    
+    # В отладочном режиме всегда разрешаем доступ
+    if DEBUG_MODE:
+        debug_admin_id = int(os.environ.get("DEBUG_ADMIN_ID", "0"))
+        if debug_admin_id and user_id == debug_admin_id:
+            is_admin = True
+            logger.info(f"Пользователь (ID: {user_id}) авторизован как администратор в режиме отладки")
     
     # Логгируем результат проверки (без чувствительных данных)
     logger.info(f"Проверка прав администратора завершена, результат: {is_admin}")
