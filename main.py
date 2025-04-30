@@ -20,6 +20,7 @@ from models import db, User, Session, Message, Feedback
 app = Flask(__name__, static_url_path='/static', static_folder='static')
 
 # Configure database
+# Используем URL базы данных из переменных окружения
 database_url = os.environ.get("DATABASE_URL")
 if database_url:
     # Маскируем пароль для логов (например postgresql://user:pass@host:port/dbname)
