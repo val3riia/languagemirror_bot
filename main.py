@@ -59,11 +59,11 @@ def start_bot_thread():
         from language_mirror_telebot import main as run_bot
         logger.info("Starting bot in background thread...")
         run_bot()
-    except Exception as e:
-        logger.error(f"Error starting bot thread: {e}")
-        # Print the full traceback for easier debugging
-        import traceback
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.error("Error starting bot thread")
+        # Uncomment for debug
+        # import traceback
+        # logger.error(traceback.format_exc())
 
 # Проверяем наличие переменной окружения BOT_AUTO_START
 if os.environ.get("BOT_AUTO_START", "False").lower() == "true" and os.environ.get("TELEGRAM_TOKEN"):

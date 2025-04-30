@@ -1062,11 +1062,12 @@ def handle_admin_feedback(message):
     # Логгируем результат проверки
     logger.info(f"Проверка администратора: username={username}, id={user_id}, result={is_admin}")
     
-    # Отладочный вывод всегда для этой функции
-    bot.send_message(
-        message.chat.id, 
-        f"🔍 Отладка: Проверка прав администратора\nusername={username}\nid={user_id}\nresult={is_admin}\nadmin_list={ADMIN_USERS}"
-    )
+    # Отладочный вывод (только если включен отладочный режим)
+    if DEBUG_MODE:
+        bot.send_message(
+            message.chat.id, 
+            f"🔍 Отладка: Проверка прав администратора\nusername={username}\nid={user_id}\nresult={is_admin}"
+        )
     
     # Отказываем в доступе неадминистраторам
     if not is_admin:
@@ -1109,10 +1110,11 @@ def handle_admin_feedback(message):
                 "✅ Все импорты выполнены успешно!"
             )
         except Exception as import_error:
-            error_msg = f"❌ Ошибка при импорте модулей: {str(import_error)}"
+            error_msg = "❌ Ошибка при импорте модулей"
             logger.error(error_msg)
-            import traceback
-            logger.error(traceback.format_exc())
+            # Закомментировано для безопасности на GitHub
+            # import traceback
+            # logger.error(traceback.format_exc())
             bot.send_message(message.chat.id, error_msg)
             raise
         
@@ -1348,10 +1350,11 @@ def main():
     # Запускаем бота с polling в non-threaded режиме с более строгими таймаутами
     try:
         bot.polling(none_stop=True, interval=0, timeout=20)
-    except Exception as e:
-        logger.error(f"Error in polling: {e}")
-        import traceback
-        logger.error(traceback.format_exc())
+    except Exception:
+        logger.error("Error in polling")
+        # При необходимости отладки раскомментируйте
+        # import traceback
+        # logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()

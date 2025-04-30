@@ -38,7 +38,7 @@ class OpenRouterClient:
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "HTTP-Referer": "https://language-mirror-bot.com"  # Replace with your site's domain
+            "HTTP-Referer": "https://example.com"  # Replace with your site's domain
         }
         
         # Prepare messages with system message at the beginning
@@ -66,7 +66,7 @@ class OpenRouterClient:
             )
             
             if response.status_code != 200:
-                self.logger.error(f"OpenRouter API error: {response.status_code}, {response.text}")
+                self.logger.error(f"OpenRouter API error: {response.status_code}")
                 return "Sorry, I encountered an error generating a response. Please try again later."
             
             response_data = response.json()
@@ -77,10 +77,10 @@ class OpenRouterClient:
             self.logger.error("Request to OpenRouter API timed out")
             return "Sorry, the request timed out. Please try again later."
             
-        except requests.exceptions.RequestException as e:
-            self.logger.error(f"Request to OpenRouter API failed: {e}")
+        except requests.exceptions.RequestException:
+            self.logger.error("Request to OpenRouter API failed")
             return "Sorry, I encountered a connection error. Please try again later."
             
-        except (KeyError, IndexError, json.JSONDecodeError) as e:
-            self.logger.error(f"Error parsing OpenRouter API response: {e}")
+        except (KeyError, IndexError, json.JSONDecodeError):
+            self.logger.error("Error parsing OpenRouter API response")
             return "Sorry, I encountered an error processing the response. Please try again later."
