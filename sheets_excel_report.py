@@ -1,7 +1,3 @@
-"""
-Модуль для создания отчетов в формате Excel на основе данных из Google Sheets.
-"""
-
 import logging
 import os
 import tempfile
@@ -10,195 +6,172 @@ from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import pandas as pd
-from xlsxwriter import Workbook
-from xlsxwriter.utility import xl_rowcol_to_cell
-
-from sheets_manager import SheetsManager
+from sheets_manager import get_sheets_manager
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
-def create_feedback_excel(sheets_manager: Optional[SheetsManager] = None, 
-                          filename: Optional[str] = None) -> Tuple[Union[BytesIO, str], str]:
+
+def create_sheets_feedback_excel(
+    limit: int = 100, filename: Optional[str] = None
+) -> Tuple[Union[BytesIO, str], str]:
     """
     Создает Excel-файл с данными обратной связи из Google Sheets.
     
     Args:
-        sheets_manager: Менеджер для работы с Google Sheets
+        limit: Максимальное количество записей
         filename: Имя выходного файла (опционально)
         
     Returns:
         Tuple: (BytesIO или путь к файлу, имя файла)
     """
-    logger.info("Создание Excel-отчета с данными обратной связи")
-    
-    # Если filename не указан, создаем временное имя файла
-    if not filename:
-        now = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"feedback_report_{now}.xlsx"
-    
     try:
-        # Если sheets_manager не передан, создаем новый
+        # Получаем менеджер Google Sheets
+        sheets_manager = get_sheets_manager()
         if not sheets_manager:
-            sheets_manager = SheetsManager()
+            logger.error("Google Sheets менеджер недоступен")
+            return create_dummy_excel(filename)
             
-        # Получаем данные обратной связи
-        feedback_data = sheets_manager.get_all_feedback()
+        # Проверяем подключение
+        if not sheets_manager.health_check():
+            logger.error("Нет подключения к Google Sheets")
+            return create_dummy_excel(filename)
+            
+        # Получаем обогащенные данные обратной связи
+        feedback_data = sheets_manager.get_enriched_feedback(limit=limit)
         
-        # Если нет данных, возвращаем пустой отчет
         if not feedback_data:
-            logger.warning("Нет данных обратной связи для создания отчета")
-            output = BytesIO()
-            workbook = Workbook(output)
-            worksheet = workbook.add_worksheet("Обратная связь")
+            logger.warning("Данные обратной связи не найдены")
+            return create_dummy_excel(filename)
             
-            # Заголовки
-            headers = ["ID", "Telegram ID", "Имя пользователя", "Имя", "Фамилия", 
-                      "ID сессии", "Оценка", "Комментарий", "Дата создания"]
-            
-            # Форматирование
-            header_format = workbook.add_format({
-                'bold': True,
-                'align': 'center',
-                'valign': 'vcenter',
-                'fg_color': '#D7E4BC',
-                'border': 1,
-            })
-            
-            # Пишем заголовки
-            for col, header in enumerate(headers):
-                worksheet.write(0, col, header, header_format)
-                worksheet.set_column(col, col, 15)
-            
-            # Добавляем сообщение о пустых данных
-            empty_format = workbook.add_format({
-                'align': 'center',
-                'valign': 'vcenter',
-                'italic': True,
-                'fg_color': '#F2F2F2',
-            })
-            
-            worksheet.merge_range(1, 0, 1, len(headers) - 1, 
-                                "Нет данных обратной связи", empty_format)
-            
-            workbook.close()
-            output.seek(0)
-            
-            return output, filename
-        
-        # Создаем DataFrame из данных обратной связи
-        df = pd.DataFrame(feedback_data)
-        
-        # Определяем, куда сохранять отчет: в файл или в память
-        save_to_file = False
-        
-        # Если имя файла указано с расширением .xlsx, сохраняем в файл
-        if filename.endswith('.xlsx'):
-            temp_dir = tempfile.gettempdir()
-            file_path = os.path.join(temp_dir, filename)
-            output = file_path
-            save_to_file = True
-        else:
-            output = BytesIO()
-        
-        # Создаем Excel-файл
-        if save_to_file:
-            writer = pd.ExcelWriter(output, engine='xlsxwriter')
-        else:
-            writer = pd.ExcelWriter(output, engine='xlsxwriter')
-            
-        # Записываем данные в Excel
-        df.to_excel(writer, sheet_name='Обратная связь', index=False)
-        
-        # Форматирование
-        workbook = writer.book
-        worksheet = writer.sheets['Обратная связь']
-        
-        # Форматы
-        header_format = workbook.add_format({
-            'bold': True,
-            'align': 'center',
-            'valign': 'vcenter',
-            'fg_color': '#D7E4BC',
-            'border': 1,
-        })
-        
-        date_format = workbook.add_format({
-            'num_format': 'yyyy-mm-dd hh:mm:ss',
-            'align': 'center',
-        })
-        
-        text_format = workbook.add_format({
-            'align': 'left',
-            'valign': 'vcenter',
-            'text_wrap': True,
-        })
-        
-        # Применяем форматы к заголовкам
-        for col_num, column in enumerate(df.columns):
-            worksheet.write(0, col_num, column, header_format)
-            
-            # Устанавливаем ширину столбца в зависимости от содержимого
-            if column in ['комментарий', 'comment']:
-                worksheet.set_column(col_num, col_num, 40, text_format)
-            elif column in ['created_at', 'дата создания']:
-                worksheet.set_column(col_num, col_num, 20, date_format)
-            else:
-                max_len = max([len(str(s)) for s in df[column]] + [len(column)])
-                worksheet.set_column(col_num, col_num, max_len + 2)
-        
-        # Сохраняем Excel-файл
-        writer.close()
-        
-        if not save_to_file:
-            output.seek(0)
-        
-        logger.info(f"Создан Excel-отчет по обратной связи: {filename}")
-        
-        return output, filename
-    
+        # Преобразуем данные для отчета
+        return create_excel_from_feedback_data(feedback_data, filename)
     except Exception as e:
-        logger.error(f"Ошибка при создании Excel-отчета: {e}")
-        
-        # В случае ошибки возвращаем пустой отчет
-        output = BytesIO()
-        workbook = Workbook(output)
-        worksheet = workbook.add_worksheet("Ошибка")
-        
-        worksheet.write(0, 0, f"Произошла ошибка при создании отчета: {str(e)}")
-        worksheet.set_column(0, 0, 50)
-        
-        workbook.close()
-        output.seek(0)
-        
-        return output, filename
+        logger.error(f"Ошибка при создании отчета из Google Sheets: {e}")
+        return create_dummy_excel(filename)
 
-def create_temp_excel_for_telegram(sheets_manager: Optional[SheetsManager] = None) -> Tuple[str, str]:
+
+def create_excel_from_feedback_data(
+    feedback_data: List[Dict[str, Any]], filename: Optional[str] = None
+) -> Tuple[Union[BytesIO, str], str]:
     """
-    Создает временный Excel-файл для отправки через Telegram.
+    Создает Excel-файл из списка данных обратной связи.
     
     Args:
-        sheets_manager: Менеджер для работы с Google Sheets
+        feedback_data: Список словарей с данными обратной связи
+        filename: Имя выходного файла (опционально)
         
     Returns:
-        Tuple: (путь к временному файлу, имя файла)
+        Tuple: (BytesIO или путь к файлу, имя файла)
     """
-    now = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"feedback_report_{now}.xlsx"
+    # Создаем DataFrame из данных
+    df = pd.DataFrame(feedback_data)
     
-    # Создаем отчет во временном файле
-    output, actual_filename = create_feedback_excel(sheets_manager, filename)
+    # Переименовываем столбцы для отчета
+    columns_mapping = {
+        "id": "ID",
+        "user_id": "ID Пользователя",
+        "session_id": "ID Сессии",
+        "telegram_id": "Telegram ID",
+        "username": "Имя пользователя",
+        "first_name": "Имя",
+        "last_name": "Фамилия",
+        "rating": "Оценка",
+        "comment": "Комментарий",
+        "created_at": "Дата создания"
+    }
     
-    if isinstance(output, BytesIO):
-        # Если отчет в памяти, сохраняем его во временный файл
-        temp_dir = tempfile.gettempdir()
-        file_path = os.path.join(temp_dir, actual_filename)
+    # Применяем переименование столбцов, если они есть в DataFrame
+    rename_cols = {col: columns_mapping[col] for col in df.columns if col in columns_mapping}
+    if rename_cols:
+        df = df.rename(columns=rename_cols)
+    
+    # Формируем имя файла, если не указано
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"feedback_report_{timestamp}.xlsx"
+    
+    # Определяем, куда сохранять файл - в память или на диск
+    if os.environ.get("EXCEL_REPORTS_IN_MEMORY", "False").lower() == "true":
+        # Сохраняем в память для отправки в Telegram
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+            df.to_excel(writer, sheet_name="Обратная связь", index=False)
+            
+            # Добавляем автоподбор ширины столбцов
+            worksheet = writer.sheets["Обратная связь"]
+            for i, col in enumerate(df.columns):
+                column_len = max(df[col].astype(str).str.len().max(), len(col) + 2)
+                worksheet.set_column(i, i, column_len)
         
-        with open(file_path, 'wb') as f:
-            f.write(output.getvalue())
-        
-        return file_path, actual_filename
+        # Возвращаем буфер и имя файла
+        excel_buffer.seek(0)
+        return excel_buffer, filename
     else:
-        # Если отчет уже в файле, просто возвращаем путь
-        return output, actual_filename
+        # Создаем временный файл для сохранения отчета
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp_path = tmp.name
+            
+        # Сохраняем в файл
+        with pd.ExcelWriter(tmp_path, engine="xlsxwriter") as writer:
+            df.to_excel(writer, sheet_name="Обратная связь", index=False)
+            
+            # Добавляем автоподбор ширины столбцов
+            worksheet = writer.sheets["Обратная связь"]
+            for i, col in enumerate(df.columns):
+                column_len = max(df[col].astype(str).str.len().max(), len(col) + 2)
+                worksheet.set_column(i, i, column_len)
+        
+        return tmp_path, filename
+
+
+def create_dummy_excel(filename: Optional[str] = None) -> Tuple[Union[BytesIO, str], str]:
+    """
+    Создает пустой Excel-файл при ошибках доступа к данным.
+    
+    Args:
+        filename: Имя выходного файла (опционально)
+        
+    Returns:
+        Tuple: (BytesIO или путь к файлу, имя файла)
+    """
+    # Создаем пустой DataFrame
+    df = pd.DataFrame({
+        "Сообщение": ["Нет данных обратной связи или ошибка при доступе к данным."]
+    })
+    
+    # Формируем имя файла, если не указано
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"empty_feedback_report_{timestamp}.xlsx"
+    
+    # Определяем, куда сохранять файл - в память или на диск
+    if os.environ.get("EXCEL_REPORTS_IN_MEMORY", "False").lower() == "true":
+        # Сохраняем в память для отправки в Telegram
+        excel_buffer = BytesIO()
+        with pd.ExcelWriter(excel_buffer, engine="xlsxwriter") as writer:
+            df.to_excel(writer, sheet_name="Обратная связь", index=False)
+        
+        # Возвращаем буфер и имя файла
+        excel_buffer.seek(0)
+        return excel_buffer, filename
+    else:
+        # Создаем временный файл для сохранения отчета
+        with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+            tmp_path = tmp.name
+            
+        # Сохраняем в файл
+        with pd.ExcelWriter(tmp_path, engine="xlsxwriter") as writer:
+            df.to_excel(writer, sheet_name="Обратная связь", index=False)
+        
+        return tmp_path, filename
+
+
+if __name__ == "__main__":
+    # Тестирование функции создания отчета
+    report_path, report_name = create_sheets_feedback_excel()
+    print(f"Отчет сохранен: {report_path} (имя файла: {report_name})")

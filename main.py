@@ -107,19 +107,26 @@ def init_google_sheets():
         use_google_sheets = os.environ.get("USE_GOOGLE_SHEETS", "True").lower() == "true"
         
         if use_google_sheets and google_creds_path and google_sheets_key:
-            from sheets_manager import SheetsManager
-            
-            logger.info("Initializing Google Sheets for data storage")
-            sheets_manager = SheetsManager(
-                credentials_path=google_creds_path,
-                spreadsheet_key=google_sheets_key
-            )
-            
-            if sheets_manager and sheets_manager.sheet:
-                logger.info("Google Sheets initialized successfully")
-                return True
-            else:
-                logger.warning("Google Sheets not fully initialized, falling back to memory storage")
+            try:
+                # Проверяем, что файл учетных данных существует
+                if not os.path.exists(google_creds_path):
+                    logger.error(f"Google Sheets credentials file not found: {google_creds_path}")
+                    return False
+                
+                # Импортируем функцию инициализации из sheets_manager
+                from sheets_manager import get_sheets_manager
+                
+                logger.info("Initializing Google Sheets for data storage")
+                sheets_manager = get_sheets_manager()
+                
+                if sheets_manager and sheets_manager.spreadsheet:
+                    logger.info("Google Sheets initialized successfully")
+                    return True
+                else:
+                    logger.warning("Google Sheets not fully initialized, falling back to memory storage")
+                    return False
+            except Exception as init_error:
+                logger.error(f"Error during Google Sheets initialization: {init_error}")
                 return False
         else:
             if not use_google_sheets:
@@ -327,15 +334,22 @@ def add_feedback():
                 comment = data.get("comment", "")
                 session_id = data.get("session_id")
                 
+                # Получаем пользователя или создаем нового
+                user = sheets_manager.get_user_by_telegram_id(telegram_id)
+                if not user:
+                    user = sheets_manager.create_user(
+                        telegram_id=telegram_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name
+                    )
+                
                 # Добавляем отзыв в Google Sheets
                 sheets_manager.add_feedback(
-                    telegram_id=telegram_id,
-                    username=username,
-                    first_name=first_name,
-                    last_name=last_name,
-                    session_id=session_id,
-                    rating=rating,
-                    comment=comment
+                    user_id=user["id"],
+                    rating=int(rating) if str(rating).isdigit() else 5,
+                    comment=comment,
+                    session_id=session_id
                 )
                 
                 logger.info(f"Feedback successfully added to Google Sheets. User: {username}, Rating: {rating}")
