@@ -748,10 +748,13 @@ def handle_feedback_comment(message):
     # Получаем тип обратной связи из временного хранилища
     feedback_type = "unknown"
     
-    if 'session_manager' in globals():
-        session = session_manager.get_session(user_id)
-        if session and "feedback_type" in session:
-            feedback_type = session["feedback_type"]
+    if session_manager is not None:
+        try:
+            session = session_manager.get_session(user_id)
+            if session and "feedback_type" in session:
+                feedback_type = session["feedback_type"]
+        except Exception as e:
+            logger.error(f"Ошибка при получении сессии для обратной связи: {e}")
     elif user_id in user_sessions and "feedback_type" in user_sessions[user_id]:
         feedback_type = user_sessions[user_id]["feedback_type"]
     
@@ -786,7 +789,7 @@ def handle_feedback_comment(message):
                         sheet_user = sheets_manager.get_user_by_telegram_id(user_id)
                         if not sheet_user:
                             sheet_user = sheets_manager.create_user(
-                                user_id=user_id,
+                                telegram_id=user_id,
                                 username=username,
                                 first_name=first_name,
                                 last_name=last_name
@@ -818,6 +821,13 @@ def handle_feedback_comment(message):
                         # Обновляем статус обратной связи пользователя, предоставляя бонус
                         sheets_manager.set_feedback_bonus_used(user_id, False)  # Разрешаем использовать бонусный запрос
                         
+                        # Проверяем, что sheets_manager существует перед вызовом его методов
+                        try:
+                            if sheets_manager:
+                                sheets_manager.set_feedback_bonus_used(user_id, False)  # Разрешаем использовать бонусный запрос
+                        except Exception as e:
+                            logger.error(f"Ошибка при установке бонуса: {e}")
+                            
                         # Отправляем уведомление о бонусном запросе
                         bot.send_message(
                             user_id,
@@ -854,8 +864,11 @@ def handle_feedback_comment(message):
     )
     
     # Очищаем данные обратной связи из временного хранилища
-    if 'session_manager' in globals():
-        session_manager.end_session(user_id)
+    if session_manager is not None:
+        try:
+            session_manager.end_session(user_id)
+        except Exception as e:
+            logger.error(f"Ошибка при завершении сессии после обратной связи: {e}")
     elif user_id in user_sessions:
         del user_sessions[user_id]
 
@@ -1125,8 +1138,11 @@ def handle_all_messages(message):
     time.sleep(1.5)  # Имитация времени обдумывания
     
     # Добавляем сообщение пользователя в сессию
-    if 'session_manager' in globals():
-        session_manager.add_message_to_session(user_id, "user", user_message)
+    if session_manager is not None:
+        try:
+            session_manager.add_message_to_session(user_id, "user", user_message)
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении сообщения в сессию: {e}")
     else:
         # Используем старую систему хранения в памяти
         if "messages" not in user_sessions[user_id]:
