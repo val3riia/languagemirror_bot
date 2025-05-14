@@ -1,8 +1,3 @@
-"""
-Модуль для управления данными в Google Sheets для Language Mirror Bot.
-Этот модуль заменяет хранение данных в PostgreSQL и работает с таблицами Google Sheets.
-"""
-
 import json
 import logging
 import os
@@ -11,568 +6,555 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gspread
+from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
 from oauth2client.service_account import ServiceAccountCredentials
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+)
 logger = logging.getLogger(__name__)
 
-# Идентификация листов в Google Sheets
-DEFAULT_SHEETS = {
-    "users": "Users",
-    "sessions": "Sessions",
-    "messages": "Messages",
-    "feedback": "Feedback"
-}
+# Google Sheets API
+SHEETS_API_SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
 
 class SheetsManager:
     """
-    Менеджер для работы с Google Sheets.
-    Обеспечивает хранение данных Language Mirror Bot в Google Sheets
-    вместо PostgreSQL.
+    Класс для управления данными бота в Google Sheets.
+    Обеспечивает хранение пользователей, сессий, истории сообщений и обратной связи.
     """
-    
-    def __init__(self, 
-                 credentials_path: Optional[str] = None,
-                 spreadsheet_key: Optional[str] = None,
-                 users_sheet_name: str = "Users",
-                 sessions_sheet_name: str = "Sessions",
-                 messages_sheet_name: str = "Messages",
-                 feedback_sheet_name: str = "Feedback"):
+
+    def __init__(
+        self,
+        spreadsheet_key: Optional[str] = None,
+        credentials_path: Optional[str] = None,
+        retry_limit: int = 3,
+        retry_delay: int = 1,
+    ):
         """
-        Инициализирует менеджер для работы с Google Sheets.
+        Инициализация менеджера Google Sheets.
+
+        Args:
+            spreadsheet_key: ID Google таблицы (по умолчанию из переменной окружения)
+            credentials_path: Путь к файлу учетных данных (по умолчанию из переменной окружения)
+            retry_limit: Максимальное количество попыток повторных запросов при ошибках API
+            retry_delay: Задержка между повторными запросами в секундах
+        """
+        # Настройка подключения
+        self.spreadsheet_key = spreadsheet_key or os.environ.get("GOOGLE_SHEETS_KEY")
+        self.credentials_path = credentials_path or os.environ.get(
+            "GOOGLE_CREDENTIALS_PATH"
+        )
+        self.retry_limit = retry_limit
+        self.retry_delay = retry_delay
+        self.client = None
+        self.spreadsheet = None
+
+        # Проверка наличия необходимых параметров
+        if not self.spreadsheet_key:
+            logger.warning("GOOGLE_SHEETS_KEY не задан в переменных окружения")
+            return
+
+        if not self.credentials_path:
+            logger.warning("GOOGLE_CREDENTIALS_PATH не задан в переменных окружения")
+            return
+
+        if not os.path.exists(self.credentials_path):
+            logger.warning(
+                f"Файл с учетными данными сервисного аккаунта не найден: {self.credentials_path}"
+            )
+            return
+
+        try:
+            # Аутентификация и подключение
+            self._authenticate()
+            self._open_spreadsheet()
+            self._ensure_required_sheets()
+            logger.info("Подключение к Google Sheets успешно установлено")
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации SheetsManager: {e}")
+
+    def _authenticate(self):
+        """Аутентификация с помощью учетных данных сервисного аккаунта"""
+        try:
+            credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                self.credentials_path, SHEETS_API_SCOPES
+            )
+            self.client = gspread.authorize(credentials)
+        except Exception as e:
+            logger.error(f"Ошибка аутентификации в Google Sheets API: {e}")
+            raise
+
+    def _open_spreadsheet(self):
+        """Открывает таблицу по ID"""
+        try:
+            self.spreadsheet = self.client.open_by_key(self.spreadsheet_key)
+            logger.info(f"Таблица успешно открыта: {self.spreadsheet.title}")
+        except SpreadsheetNotFound:
+            logger.error(f"Таблица не найдена: {self.spreadsheet_key}")
+            raise
+        except Exception as e:
+            logger.error(f"Ошибка при открытии таблицы: {e}")
+            raise
+
+    def _ensure_required_sheets(self):
+        """Создает необходимые листы, если их нет"""
+        required_sheets = {
+            "users": ["id", "telegram_id", "username", "first_name", "last_name", "created_at"],
+            "sessions": ["id", "user_id", "language_level", "created_at", "updated_at", "is_active", "data"],
+            "messages": ["id", "session_id", "role", "content", "created_at"],
+            "feedback": ["id", "user_id", "session_id", "rating", "comment", "created_at"]
+        }
+
+        existing_sheets = [ws.title for ws in self.spreadsheet.worksheets()]
+
+        for sheet_name, columns in required_sheets.items():
+            try:
+                if sheet_name not in existing_sheets:
+                    logger.info(f"Создаю лист '{sheet_name}'")
+                    worksheet = self.spreadsheet.add_worksheet(title=sheet_name, rows=1, cols=len(columns))
+                    worksheet.append_row(columns)
+                else:
+                    worksheet = self.spreadsheet.worksheet(sheet_name)
+                    # Проверим, есть ли заголовки столбцов
+                    headers = worksheet.row_values(1)
+                    if not headers:
+                        worksheet.append_row(columns)
+            except Exception as e:
+                logger.error(f"Ошибка при создании листа '{sheet_name}': {e}")
+
+    def _execute_with_retry(self, operation, *args, **kwargs):
+        """
+        Выполняет операцию с повторными попытками при ошибках API.
         
         Args:
-            credentials_path (str, optional): Путь к файлу учетных данных JSON
-            spreadsheet_key (str, optional): Ключ таблицы Google Sheets
-            users_sheet_name (str): Имя листа для пользователей
-            sessions_sheet_name (str): Имя листа для сессий
-            messages_sheet_name (str): Имя листа для сообщений
-            feedback_sheet_name (str): Имя листа для обратной связи
-        """
-        self.credentials_path = credentials_path or os.environ.get('GOOGLE_CREDENTIALS_PATH')
-        self.spreadsheet_key = spreadsheet_key or os.environ.get('GOOGLE_SHEETS_KEY')
-        
-        self.users_sheet_name = users_sheet_name
-        self.sessions_sheet_name = sessions_sheet_name
-        self.messages_sheet_name = messages_sheet_name
-        self.feedback_sheet_name = feedback_sheet_name
-        
-        self.sheet = None
-        
-        # Инициализация Google Sheets API
-        try:
-            if self.credentials_path and self.spreadsheet_key:
-                # Аутентификация в Google Sheets API
-                scope = ['https://spreadsheets.google.com/feeds',
-                         'https://www.googleapis.com/auth/drive']
-                
-                creds = ServiceAccountCredentials.from_json_keyfile_name(
-                    self.credentials_path, scope)
-                
-                client = gspread.authorize(creds)
-                
-                # Открытие таблицы по ключу
-                self.sheet = client.open_by_key(self.spreadsheet_key)
-                
-                # Проверка и создание необходимых листов
-                self._setup_sheets()
-                
-                logger.info(f"Google Sheets initialized with key: {self.spreadsheet_key}")
-            else:
-                logger.warning("GOOGLE_CREDENTIALS_PATH or GOOGLE_SHEETS_KEY not provided")
-        except Exception as e:
-            logger.error(f"Error initializing Google Sheets: {e}")
-    
-    def _setup_sheets(self):
-        """Создает необходимые листы, если они отсутствуют."""
-        try:
-            # Получаем список существующих листов
-            existing_worksheets = [ws.title for ws in self.sheet.worksheets()]
-            
-            # Создаем лист пользователей, если он не существует
-            if self.users_sheet_name not in existing_worksheets:
-                self.sheet.add_worksheet(title=self.users_sheet_name, rows=1000, cols=20)
-                users_sheet = self.sheet.worksheet(self.users_sheet_name)
-                users_sheet.append_row([
-                    "id", "telegram_id", "username", "first_name", "last_name", 
-                    "language_level", "feedback_bonus_used", "feedback_bonus_available",
-                    "created_at", "last_active"
-                ])
-            
-            # Создаем лист сессий, если он не существует
-            if self.sessions_sheet_name not in existing_worksheets:
-                self.sheet.add_worksheet(title=self.sessions_sheet_name, rows=1000, cols=10)
-                sessions_sheet = self.sheet.worksheet(self.sessions_sheet_name)
-                sessions_sheet.append_row([
-                    "id", "user_id", "telegram_id", "active", "language_level", 
-                    "topic", "created_at", "last_active"
-                ])
-            
-            # Создаем лист сообщений, если он не существует
-            if self.messages_sheet_name not in existing_worksheets:
-                self.sheet.add_worksheet(title=self.messages_sheet_name, rows=5000, cols=10)
-                messages_sheet = self.sheet.worksheet(self.messages_sheet_name)
-                messages_sheet.append_row([
-                    "id", "session_id", "telegram_id", "role", "content", "created_at"
-                ])
-            
-            # Создаем лист обратной связи, если он не существует
-            if self.feedback_sheet_name not in existing_worksheets:
-                self.sheet.add_worksheet(title=self.feedback_sheet_name, rows=1000, cols=10)
-                feedback_sheet = self.sheet.worksheet(self.feedback_sheet_name)
-                feedback_sheet.append_row([
-                    "id", "telegram_id", "username", "first_name", "last_name", 
-                    "session_id", "rating", "comment", "created_at"
-                ])
-                
-            logger.info("All required sheets are set up")
-        except Exception as e:
-            logger.error(f"Error setting up sheets: {e}")
-    
-    def _get_next_id(self, sheet_name):
-        """
-        Получает следующий ID для новой записи в указанном листе.
-        
-        Args:
-            sheet_name (str): Имя листа
+            operation: Функция для выполнения
+            *args, **kwargs: Аргументы для функции
             
         Returns:
-            int: Следующий ID
+            Результат операции
         """
-        try:
-            worksheet = self.sheet.worksheet(sheet_name)
-            # Получаем все значения в первом столбце
-            values = worksheet.col_values(1)
-            
-            # Пропускаем заголовок и считаем количество записей
-            num_records = len(values) - 1 if len(values) > 0 else 0
-            
-            # Возвращаем следующий ID
-            return num_records + 1
-        except Exception as e:
-            logger.error(f"Error getting next ID for {sheet_name}: {e}")
-            return 1  # В случае ошибки возвращаем 1
-    
-    def get_user_by_telegram_id(self, telegram_id):
+        attempt = 0
+        last_error = None
+
+        while attempt < self.retry_limit:
+            try:
+                return operation(*args, **kwargs)
+            except APIError as e:
+                last_error = e
+                attempt += 1
+                if attempt < self.retry_limit:
+                    logger.warning(
+                        f"API ошибка при попытке {attempt}, повторяю через {self.retry_delay} сек: {e}"
+                    )
+                    time.sleep(self.retry_delay)
+                else:
+                    logger.error(f"Превышено количество попыток. Последняя ошибка: {e}")
+                    raise
+            except Exception as e:
+                logger.error(f"Непредвиденная ошибка: {e}")
+                raise
+
+        if last_error:
+            raise last_error
+        
+        raise Exception("Превышено максимальное количество попыток")
+
+    # ----- Работа с пользователями -----
+
+    def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict[str, Any]]:
         """
-        Получает данные пользователя по его Telegram ID.
+        Получает пользователя по Telegram ID.
         
         Args:
-            telegram_id: Telegram ID пользователя
+            telegram_id: ID пользователя в Telegram
             
         Returns:
-            dict: Данные пользователя или None, если пользователь не найден
+            Словарь с данными пользователя или None, если не найден
         """
         try:
-            worksheet = self.sheet.worksheet(self.users_sheet_name)
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return None
+
+            worksheet = self.spreadsheet.worksheet("users")
             
-            # Получаем заголовки
+            # Находим строку с указанным telegram_id
+            cell = self._execute_with_retry(
+                worksheet.find, str(telegram_id), in_column=2
+            )
+            
+            if not cell:
+                return None
+                
+            row_data = worksheet.row_values(cell.row)
             headers = worksheet.row_values(1)
             
-            # Ищем пользователя по telegram_id
-            cell = worksheet.find(str(telegram_id), in_column=2)
+            # Преобразуем данные строки в словарь
+            user_data = dict(zip(headers, row_data))
             
-            if cell:
-                row = worksheet.row_values(cell.row)
+            # Преобразуем id и telegram_id в числа
+            if "id" in user_data and user_data["id"]:
+                user_data["id"] = int(user_data["id"])
+            if "telegram_id" in user_data and user_data["telegram_id"]:
+                user_data["telegram_id"] = int(user_data["telegram_id"])
                 
-                # Создаем словарь с данными пользователя
-                user_data = dict(zip(headers, row))
-                return user_data
-            
-            return None
+            return user_data
         except Exception as e:
-            logger.error(f"Error getting user by telegram_id {telegram_id}: {e}")
+            logger.error(f"Ошибка при получении пользователя по telegram_id: {e}")
             return None
-    
-    def add_user(self, telegram_id, username=None, first_name=None, last_name=None, language_level=None):
+
+    def create_user(
+        self, 
+        telegram_id: int, 
+        username: Optional[str] = None, 
+        first_name: Optional[str] = None, 
+        last_name: Optional[str] = None
+    ) -> Optional[Dict[str, Any]]:
         """
-        Добавляет нового пользователя или обновляет существующего.
+        Создает нового пользователя в таблице users.
         
         Args:
-            telegram_id: Telegram ID пользователя
+            telegram_id: ID пользователя в Telegram
             username: Имя пользователя в Telegram
-            first_name: Имя пользователя
-            last_name: Фамилия пользователя
-            language_level: Уровень владения языком
+            first_name: Имя
+            last_name: Фамилия
             
         Returns:
-            dict: Данные добавленного пользователя
+            Словарь с данными созданного пользователя или None при ошибке
         """
         try:
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return None
+
             # Проверяем, существует ли пользователь
             existing_user = self.get_user_by_telegram_id(telegram_id)
-            
             if existing_user:
-                # Обновляем существующего пользователя
-                return self.update_user(
-                    telegram_id,
-                    {
-                        "username": username or existing_user.get("username", ""),
-                        "first_name": first_name or existing_user.get("first_name", ""),
-                        "last_name": last_name or existing_user.get("last_name", ""),
-                        "language_level": language_level or existing_user.get("language_level", ""),
-                        "last_active": datetime.now().isoformat()
-                    }
-                )
+                return existing_user
+
+            worksheet = self.spreadsheet.worksheet("users")
             
-            # Создаем нового пользователя
-            worksheet = self.sheet.worksheet(self.users_sheet_name)
+            # Получаем последний ID
+            id_col = worksheet.col_values(1)
+            next_id = 1
+            if len(id_col) > 1:  # Если есть другие записи кроме заголовка
+                last_id = id_col[-1]
+                if last_id.isdigit():
+                    next_id = int(last_id) + 1
             
-            # Получаем следующий ID
-            user_id = self._get_next_id(self.users_sheet_name)
-            current_time = datetime.now().isoformat()
-            
-            # Создаем запись пользователя
-            new_user = [
-                user_id,
+            # Подготавливаем данные для добавления
+            now = datetime.now().isoformat()
+            user_data = [
+                next_id,
                 telegram_id,
                 username or "",
                 first_name or "",
                 last_name or "",
-                language_level or "",
-                "False",  # feedback_bonus_used
-                "False",  # feedback_bonus_available
-                current_time,  # created_at
-                current_time   # last_active
+                now
             ]
             
             # Добавляем пользователя
-            worksheet.append_row([str(val) for val in new_user])
+            self._execute_with_retry(worksheet.append_row, user_data)
             
-            # Получаем заголовки
+            # Возвращаем данные в формате словаря
             headers = worksheet.row_values(1)
+            user_dict = dict(zip(headers, user_data))
             
-            # Создаем словарь с данными пользователя
-            user_data = dict(zip(headers, new_user))
-            
-            logger.info(f"Added new user with telegram_id {telegram_id}")
-            
-            return user_data
+            return user_dict
         except Exception as e:
-            logger.error(f"Error adding user with telegram_id {telegram_id}: {e}")
+            logger.error(f"Ошибка при создании пользователя: {e}")
             return None
-    
-    def update_user(self, telegram_id, data):
+
+    def update_user(self, user_id: int, data: Dict[str, Any]) -> bool:
         """
         Обновляет данные пользователя.
         
         Args:
-            telegram_id: Telegram ID пользователя
-            data: Словарь с данными для обновления
+            user_id: ID пользователя в таблице
+            data: Словарь с обновляемыми полями
             
         Returns:
-            dict: Обновленные данные пользователя
+            True при успешном обновлении, False при ошибке
         """
         try:
-            worksheet = self.sheet.worksheet(self.users_sheet_name)
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return False
+
+            worksheet = self.spreadsheet.worksheet("users")
             
-            # Получаем заголовки
+            # Находим строку с указанным ID
+            cell = self._execute_with_retry(
+                worksheet.find, str(user_id), in_column=1
+            )
+            
+            if not cell:
+                logger.warning(f"Пользователь с ID {user_id} не найден")
+                return False
+            
+            # Получаем заголовки и текущие данные
             headers = worksheet.row_values(1)
+            current_row = worksheet.row_values(cell.row)
+            current_data = dict(zip(headers, current_row))
             
-            # Ищем пользователя по telegram_id
-            cell = worksheet.find(str(telegram_id), in_column=2)
+            # Обновляем данные
+            for key, value in data.items():
+                if key in headers:
+                    col_idx = headers.index(key) + 1  # +1 т.к. индексация с 1
+                    self._execute_with_retry(
+                        worksheet.update_cell, cell.row, col_idx, str(value)
+                    )
+                    current_data[key] = value
             
-            if cell:
-                # Получаем текущие данные пользователя
-                row = worksheet.row_values(cell.row)
-                user_data = dict(zip(headers, row))
-                
-                # Обновляем данные
-                for key, value in data.items():
-                    if key in headers:
-                        col_idx = headers.index(key) + 1
-                        worksheet.update_cell(cell.row, col_idx, str(value))
-                        user_data[key] = str(value)
-                
-                # Обязательно обновляем last_active
-                last_active_idx = headers.index("last_active") + 1
-                current_time = datetime.now().isoformat()
-                worksheet.update_cell(cell.row, last_active_idx, current_time)
-                user_data["last_active"] = current_time
-                
-                logger.info(f"Updated user with telegram_id {telegram_id}")
-                
-                return user_data
-            else:
-                # Если пользователь не найден, создаем нового
-                return self.add_user(telegram_id)
+            return True
         except Exception as e:
-            logger.error(f"Error updating user with telegram_id {telegram_id}: {e}")
-            return None
-    
-    def create_session(self, telegram_id, language_level=None, topic=None):
+            logger.error(f"Ошибка при обновлении пользователя: {e}")
+            return False
+
+    # ----- Работа с сессиями -----
+
+    def create_session(
+        self, 
+        user_id: int, 
+        language_level: Optional[str] = None, 
+        session_data: Optional[Dict[str, Any]] = None
+    ) -> Optional[Dict[str, Any]]:
         """
         Создает новую сессию для пользователя.
         
         Args:
-            telegram_id: Telegram ID пользователя
-            language_level: Уровень владения языком
-            topic: Тема сессии
+            user_id: ID пользователя в таблице
+            language_level: Уровень владения языком (A1-C2)
+            session_data: Дополнительные данные сессии
             
         Returns:
-            dict: Данные созданной сессии
+            Словарь с данными созданной сессии или None при ошибке
         """
         try:
-            # Получаем или создаем пользователя
-            user = self.get_user_by_telegram_id(telegram_id)
-            if not user:
-                user = self.add_user(telegram_id)
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return None
+
+            worksheet = self.spreadsheet.worksheet("sessions")
             
-            # Завершаем все активные сессии пользователя
-            self.end_all_sessions(telegram_id)
+            # Получаем последний ID
+            id_col = worksheet.col_values(1)
+            next_id = 1
+            if len(id_col) > 1:  # Если есть другие записи кроме заголовка
+                last_id = id_col[-1]
+                if last_id.isdigit():
+                    next_id = int(last_id) + 1
             
-            # Работаем с листом сессий
-            worksheet = self.sheet.worksheet(self.sessions_sheet_name)
+            # Подготавливаем данные для добавления
+            now = datetime.now().isoformat()
             
-            # Получаем следующий ID
-            session_id = self._get_next_id(self.sessions_sheet_name)
-            current_time = datetime.now().isoformat()
+            # Если есть дополнительные данные, сериализуем их в JSON
+            json_data = "{}"
+            if session_data:
+                json_data = json.dumps(session_data)
             
-            # Создаем запись сессии
-            new_session = [
-                session_id,
-                user.get("id", ""),
-                telegram_id,
-                "True",  # active
-                language_level or user.get("language_level", ""),
-                topic or "",
-                current_time,  # created_at
-                current_time   # last_active
+            session_row = [
+                next_id,
+                user_id,
+                language_level or "",
+                now,  # created_at
+                now,  # updated_at
+                True,  # is_active
+                json_data  # data
             ]
             
             # Добавляем сессию
-            worksheet.append_row([str(val) for val in new_session])
+            self._execute_with_retry(worksheet.append_row, session_row)
             
-            # Получаем заголовки
+            # Возвращаем данные в формате словаря
             headers = worksheet.row_values(1)
+            session_dict = dict(zip(headers, session_row))
             
-            # Создаем словарь с данными сессии
-            session_data = dict(zip(headers, new_session))
+            # Если data - это JSON строка, преобразуем её обратно в словарь
+            if "data" in session_dict and isinstance(session_dict["data"], str):
+                try:
+                    session_dict["data"] = json.loads(session_dict["data"])
+                except json.JSONDecodeError:
+                    session_dict["data"] = {}
             
-            logger.info(f"Created new session for user with telegram_id {telegram_id}")
-            
-            return session_data
+            return session_dict
         except Exception as e:
-            logger.error(f"Error creating session for user with telegram_id {telegram_id}: {e}")
+            logger.error(f"Ошибка при создании сессии: {e}")
             return None
-    
-    def get_active_session(self, telegram_id):
+
+    def get_active_session(self, user_id: int) -> Optional[Dict[str, Any]]:
         """
         Получает активную сессию пользователя.
         
         Args:
-            telegram_id: Telegram ID пользователя
+            user_id: ID пользователя в таблице
             
         Returns:
-            dict: Данные активной сессии или None, если сессия не найдена
+            Словарь с данными активной сессии или None, если не найдена
         """
         try:
-            worksheet = self.sheet.worksheet(self.sessions_sheet_name)
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return None
+
+            worksheet = self.spreadsheet.worksheet("sessions")
             
-            # Получаем заголовки
-            headers = worksheet.row_values(1)
+            # Получаем все сессии пользователя
+            user_id_str = str(user_id)
+            all_sessions = worksheet.get_all_records()
             
-            # Находим все строки с данным telegram_id
-            cells = worksheet.findall(str(telegram_id), in_column=3)
+            # Находим активную сессию
+            active_session = None
+            for session in all_sessions:
+                if str(session.get("user_id")) == user_id_str and session.get("is_active") in (True, "TRUE", "True", "true", 1, "1"):
+                    active_session = session
+                    break
             
-            for cell in cells:
-                row = worksheet.row_values(cell.row)
-                session_data = dict(zip(headers, row))
-                
-                # Проверяем, активна ли сессия
-                if session_data.get("active", "").lower() == "true":
-                    return session_data
+            if not active_session:
+                return None
             
-            return None
+            # Если data - это JSON строка, преобразуем её в словарь
+            if "data" in active_session and isinstance(active_session["data"], str):
+                try:
+                    active_session["data"] = json.loads(active_session["data"])
+                except json.JSONDecodeError:
+                    active_session["data"] = {}
+            
+            return active_session
         except Exception as e:
-            logger.error(f"Error getting active session for user with telegram_id {telegram_id}: {e}")
+            logger.error(f"Ошибка при получении активной сессии: {e}")
             return None
-    
-    def update_session(self, session_id, data):
+
+    def update_session(self, session_id: int, data: Dict[str, Any]) -> bool:
         """
         Обновляет данные сессии.
         
         Args:
             session_id: ID сессии
-            data: Словарь с данными для обновления
+            data: Словарь с обновляемыми полями
             
         Returns:
-            dict: Обновленные данные сессии
+            True при успешном обновлении, False при ошибке
         """
         try:
-            worksheet = self.sheet.worksheet(self.sessions_sheet_name)
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return False
+
+            worksheet = self.spreadsheet.worksheet("sessions")
             
-            # Получаем заголовки
+            # Находим строку с указанным ID
+            cell = self._execute_with_retry(
+                worksheet.find, str(session_id), in_column=1
+            )
+            
+            if not cell:
+                logger.warning(f"Сессия с ID {session_id} не найдена")
+                return False
+            
+            # Получаем заголовки и текущие данные
             headers = worksheet.row_values(1)
+            current_row = worksheet.row_values(cell.row)
+            current_data = dict(zip(headers, current_row))
             
-            # Ищем сессию по ID
-            cell = worksheet.find(str(session_id), in_column=1)
+            # Особая обработка для поля data
+            if "data" in data:
+                if isinstance(data["data"], dict):
+                    # Если в data передан словарь, сериализуем его в JSON
+                    data["data"] = json.dumps(data["data"])
             
-            if cell:
-                # Получаем текущие данные сессии
-                row = worksheet.row_values(cell.row)
-                session_data = dict(zip(headers, row))
-                
-                # Обновляем данные
-                for key, value in data.items():
-                    if key in headers:
-                        col_idx = headers.index(key) + 1
-                        worksheet.update_cell(cell.row, col_idx, str(value))
-                        session_data[key] = str(value)
-                
-                # Обязательно обновляем last_active
-                last_active_idx = headers.index("last_active") + 1
-                current_time = datetime.now().isoformat()
-                worksheet.update_cell(cell.row, last_active_idx, current_time)
-                session_data["last_active"] = current_time
-                
-                logger.info(f"Updated session with ID {session_id}")
-                
-                return session_data
+            # Всегда обновляем поле updated_at
+            data["updated_at"] = datetime.now().isoformat()
             
-            return None
+            # Обновляем данные
+            for key, value in data.items():
+                if key in headers:
+                    col_idx = headers.index(key) + 1  # +1 т.к. индексация с 1
+                    self._execute_with_retry(
+                        worksheet.update_cell, cell.row, col_idx, str(value)
+                    )
+            
+            return True
         except Exception as e:
-            logger.error(f"Error updating session with ID {session_id}: {e}")
-            return None
-    
-    def end_session(self, session_id):
+            logger.error(f"Ошибка при обновлении сессии: {e}")
+            return False
+
+    def end_session(self, session_id: int) -> bool:
         """
-        Завершает сессию.
+        Завершает сессию, устанавливая is_active = False.
         
         Args:
             session_id: ID сессии
             
         Returns:
-            bool: True если сессия завершена успешно, иначе False
+            True при успешном завершении, False при ошибке
         """
-        try:
-            worksheet = self.sheet.worksheet(self.sessions_sheet_name)
-            
-            # Получаем заголовки
-            headers = worksheet.row_values(1)
-            
-            # Ищем сессию по ID
-            cell = worksheet.find(str(session_id), in_column=1)
-            
-            if cell:
-                # Изменяем статус сессии на неактивный
-                active_idx = headers.index("active") + 1
-                worksheet.update_cell(cell.row, active_idx, "False")
-                
-                logger.info(f"Ended session with ID {session_id}")
-                
-                return True
-            
-            return False
-        except Exception as e:
-            logger.error(f"Error ending session with ID {session_id}: {e}")
-            return False
-    
-    def end_all_sessions(self, telegram_id):
+        return self.update_session(session_id, {"is_active": False})
+
+    # ----- Работа с сообщениями -----
+
+    def add_message(
+        self, 
+        session_id: int, 
+        role: str, 
+        content: str
+    ) -> Optional[Dict[str, Any]]:
         """
-        Завершает все активные сессии пользователя.
+        Добавляет сообщение в историю сессии.
         
         Args:
-            telegram_id: Telegram ID пользователя
+            session_id: ID сессии
+            role: Роль отправителя ('user' или 'assistant')
+            content: Содержание сообщения
             
         Returns:
-            int: Количество завершенных сессий
+            Словарь с данными добавленного сообщения или None при ошибке
         """
         try:
-            worksheet = self.sheet.worksheet(self.sessions_sheet_name)
-            
-            # Получаем заголовки
-            headers = worksheet.row_values(1)
-            active_idx = headers.index("active") + 1
-            
-            # Находим все строки с данным telegram_id
-            cells = worksheet.findall(str(telegram_id), in_column=3)
-            
-            count = 0
-            for cell in cells:
-                row = worksheet.row_values(cell.row)
-                session_data = dict(zip(headers, row))
-                
-                # Проверяем, активна ли сессия
-                if session_data.get("active", "").lower() == "true":
-                    # Изменяем статус сессии на неактивный
-                    worksheet.update_cell(cell.row, active_idx, "False")
-                    count += 1
-            
-            if count > 0:
-                logger.info(f"Ended {count} active sessions for user with telegram_id {telegram_id}")
-            
-            return count
-        except Exception as e:
-            logger.error(f"Error ending all sessions for user with telegram_id {telegram_id}: {e}")
-            return 0
-    
-    def add_message(self, telegram_id, role, content, session_id=None):
-        """
-        Добавляет сообщение к сессии.
-        
-        Args:
-            telegram_id: Telegram ID пользователя
-            role: Роль отправителя (user/assistant)
-            content: Содержимое сообщения
-            session_id: ID сессии (опционально)
-            
-        Returns:
-            dict: Данные добавленного сообщения
-        """
-        try:
-            # Если session_id не указан, находим активную сессию
-            if not session_id:
-                active_session = self.get_active_session(telegram_id)
-                if active_session:
-                    session_id = active_session.get("id")
-                else:
-                    # Если активной сессии нет, создаем новую
-                    new_session = self.create_session(telegram_id)
-                    session_id = new_session.get("id") if new_session else None
-            
-            if not session_id:
-                logger.error(f"Cannot add message: No active session for user {telegram_id}")
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
                 return None
+
+            worksheet = self.spreadsheet.worksheet("messages")
             
-            # Работаем с листом сообщений
-            worksheet = self.sheet.worksheet(self.messages_sheet_name)
+            # Получаем последний ID
+            id_col = worksheet.col_values(1)
+            next_id = 1
+            if len(id_col) > 1:  # Если есть другие записи кроме заголовка
+                last_id = id_col[-1]
+                if last_id.isdigit():
+                    next_id = int(last_id) + 1
             
-            # Получаем следующий ID
-            message_id = self._get_next_id(self.messages_sheet_name)
-            current_time = datetime.now().isoformat()
+            # Подготавливаем данные для добавления
+            now = datetime.now().isoformat()
             
-            # Создаем запись сообщения
-            new_message = [
-                message_id,
+            message_row = [
+                next_id,
                 session_id,
-                telegram_id,
                 role,
                 content,
-                current_time
+                now  # created_at
             ]
             
             # Добавляем сообщение
-            worksheet.append_row([str(val) for val in new_message])
+            self._execute_with_retry(worksheet.append_row, message_row)
             
-            # Получаем заголовки
+            # Возвращаем данные в формате словаря
             headers = worksheet.row_values(1)
+            message_dict = dict(zip(headers, message_row))
             
-            # Создаем словарь с данными сообщения
-            message_data = dict(zip(headers, new_message))
-            
-            # Обновляем время последней активности в сессии
-            self.update_session(session_id, {"last_active": current_time})
-            
-            logger.info(f"Added message to session {session_id} for user {telegram_id}")
-            
-            return message_data
+            return message_dict
         except Exception as e:
-            logger.error(f"Error adding message for user {telegram_id}: {e}")
+            logger.error(f"Ошибка при добавлении сообщения: {e}")
             return None
-    
-    def get_session_messages(self, session_id):
+
+    def get_session_messages(self, session_id: int) -> List[Dict[str, Any]]:
         """
         Получает все сообщения сессии.
         
@@ -580,150 +562,272 @@ class SheetsManager:
             session_id: ID сессии
             
         Returns:
-            list: Список сообщений сессии
+            Список словарей с данными сообщений
         """
         try:
-            worksheet = self.sheet.worksheet(self.messages_sheet_name)
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return []
+
+            worksheet = self.spreadsheet.worksheet("messages")
             
-            # Получаем заголовки
-            headers = worksheet.row_values(1)
+            # Получаем все сообщения
+            session_id_str = str(session_id)
+            all_messages = worksheet.get_all_records()
             
-            # Находим все строки с данным session_id
-            cells = worksheet.findall(str(session_id), in_column=2)
-            
-            messages = []
-            for cell in cells:
-                row = worksheet.row_values(cell.row)
-                message_data = dict(zip(headers, row))
-                messages.append({
-                    "role": message_data.get("role", ""),
-                    "content": message_data.get("content", "")
-                })
-            
-            return messages
-        except Exception as e:
-            logger.error(f"Error getting messages for session {session_id}: {e}")
-            return []
-    
-    def add_feedback(self, telegram_id=None, username=None, first_name=None, last_name=None, 
-                       session_id=None, rating=None, comment=None):
-        """
-        Добавляет новый отзыв в таблицу отзывов.
-        
-        Args:
-            telegram_id (int): Telegram ID пользователя
-            username (str, optional): Имя пользователя в Telegram
-            first_name (str, optional): Имя пользователя
-            last_name (str, optional): Фамилия пользователя
-            session_id (int, optional): ID сессии
-            rating (str): Рейтинг (оценка)
-            comment (str, optional): Комментарий к отзыву
-        """
-        logger.info(f"Добавление отзыва от пользователя {telegram_id}: {rating}")
-        
-        try:
-            # Работаем с листом отзывов
-            feedback_sheet = self.sheet.worksheet(self.feedback_sheet_name)
-            
-            # Получаем следующий ID для отзыва
-            feedback_id = self._get_next_id(self.feedback_sheet_name)
-            current_time = datetime.now().isoformat()
-            
-            # Создаем отзыв
-            new_feedback = [
-                feedback_id,
-                telegram_id,
-                username,
-                first_name,
-                last_name,
-                session_id,
-                rating,
-                comment or "",
-                current_time
+            # Фильтруем сообщения для указанной сессии
+            session_messages = [
+                msg for msg in all_messages 
+                if str(msg.get("session_id")) == session_id_str
             ]
             
-            # Добавляем отзыв в таблицу
-            feedback_sheet.append_row([str(val) for val in new_feedback])
+            # Сортируем по ID (для сохранения порядка)
+            session_messages.sort(key=lambda x: int(x.get("id", 0)))
             
-            logger.info(f"Добавлен отзыв от пользователя {telegram_id}: {rating}")
-            
+            return session_messages
         except Exception as e:
-            logger.error(f"Ошибка при добавлении отзыва от пользователя {telegram_id}: {e}")
-            
-    def has_user_used_feedback_bonus(self, telegram_id):
+            logger.error(f"Ошибка при получении сообщений сессии: {e}")
+            return []
+
+    # ----- Работа с обратной связью -----
+
+    def add_feedback(
+        self, 
+        user_id: int, 
+        rating: int, 
+        comment: Optional[str] = None, 
+        session_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
         """
-        Проверяет, использовал ли пользователь бонус за обратную связь.
+        Добавляет обратную связь от пользователя.
         
         Args:
-            telegram_id (int): Telegram ID пользователя
+            user_id: ID пользователя
+            rating: Оценка (1-5)
+            comment: Комментарий
+            session_id: ID сессии (опционально)
             
         Returns:
-            bool: True если пользователь уже использовал бонус, иначе False
+            Словарь с данными добавленной обратной связи или None при ошибке
         """
         try:
-            user_data = self.get_user_by_telegram_id(telegram_id)
-            if user_data and "feedback_bonus_used" in user_data:
-                return user_data["feedback_bonus_used"].lower() == "true"
-            return False
-        except Exception as e:
-            logger.error(f"Ошибка при проверке использования бонуса пользователем {telegram_id}: {e}")
-            return False
-    
-    def set_feedback_bonus_used(self, telegram_id, used=True):
-        """
-        Устанавливает статус использования бонуса за обратную связь.
-        
-        Args:
-            telegram_id (int): Telegram ID пользователя
-            used (bool): Статус использования бонуса
-        """
-        try:
-            self.update_user(telegram_id, {"feedback_bonus_used": str(used)})
-            logger.info(f"Установлен статус использования бонуса для пользователя {telegram_id}: {used}")
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка при установке статуса бонуса для пользователя {telegram_id}: {e}")
-            return False
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return None
+
+            worksheet = self.spreadsheet.worksheet("feedback")
             
-    def set_feedback_bonus_available(self, telegram_id, available=True):
+            # Получаем последний ID
+            id_col = worksheet.col_values(1)
+            next_id = 1
+            if len(id_col) > 1:  # Если есть другие записи кроме заголовка
+                last_id = id_col[-1]
+                if last_id.isdigit():
+                    next_id = int(last_id) + 1
+            
+            # Подготавливаем данные для добавления
+            now = datetime.now().isoformat()
+            
+            feedback_row = [
+                next_id,
+                user_id,
+                session_id or "",
+                rating,
+                comment or "",
+                now  # created_at
+            ]
+            
+            # Добавляем обратную связь
+            self._execute_with_retry(worksheet.append_row, feedback_row)
+            
+            # Возвращаем данные в формате словаря
+            headers = worksheet.row_values(1)
+            feedback_dict = dict(zip(headers, feedback_row))
+            
+            return feedback_dict
+        except Exception as e:
+            logger.error(f"Ошибка при добавлении обратной связи: {e}")
+            return None
+
+    def get_all_feedback(self, limit: int = 100) -> List[Dict[str, Any]]:
         """
-        Устанавливает доступность бонуса за обратную связь.
+        Получает всю обратную связь из таблицы.
         
         Args:
-            telegram_id (int): Telegram ID пользователя
-            available (bool): Доступен ли бонус
-        """
-        try:
-            self.update_user(telegram_id, {"feedback_bonus_available": str(available)})
-            logger.info(f"Установлена доступность бонуса для пользователя {telegram_id}: {available}")
-            return True
-        except Exception as e:
-            logger.error(f"Ошибка при установке доступности бонуса для пользователя {telegram_id}: {e}")
-            return False
-    
-    def get_all_feedback(self) -> List[Dict[str, Any]]:
-        """
-        Получает все отзывы пользователей.
-        
+            limit: Максимальное количество записей
+            
         Returns:
-            Список всех отзывов
+            Список словарей с данными обратной связи
         """
         try:
-            feedback_sheet = self.sheet.worksheet(self.feedback_sheet_name)
-            
-            # Получаем заголовки и все данные
-            all_values = feedback_sheet.get_all_values()
-            
-            if not all_values or len(all_values) < 2:
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
                 return []
+
+            worksheet = self.spreadsheet.worksheet("feedback")
             
-            headers = all_values[0]
-            data = all_values[1:]
+            # Получаем все записи обратной связи
+            all_feedback = worksheet.get_all_records()
             
-            # Преобразуем в список словарей
-            feedback_list = [dict(zip(headers, row)) for row in data]
+            # Сортируем по дате создания (от новых к старым)
+            all_feedback.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+            
+            # Ограничиваем количество записей
+            return all_feedback[:limit]
+        except Exception as e:
+            logger.error(f"Ошибка при получении обратной связи: {e}")
+            return []
+
+    def get_enriched_feedback(self, limit: int = 100) -> List[Dict[str, Any]]:
+        """
+        Получает обратную связь с дополнительной информацией о пользователях.
+        
+        Args:
+            limit: Максимальное количество записей
+            
+        Returns:
+            Список словарей с обогащенными данными обратной связи
+        """
+        try:
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return []
+
+            # Получаем обратную связь
+            feedback_list = self.get_all_feedback(limit)
+            
+            # Получаем всех пользователей
+            users_worksheet = self.spreadsheet.worksheet("users")
+            all_users = users_worksheet.get_all_records()
+            users_dict = {str(user.get("id")): user for user in all_users}
+            
+            # Обогащаем данные обратной связи информацией о пользователях
+            for feedback in feedback_list:
+                user_id = str(feedback.get("user_id", ""))
+                user_data = users_dict.get(user_id, {})
+                
+                feedback["username"] = user_data.get("username", "")
+                feedback["first_name"] = user_data.get("first_name", "")
+                feedback["last_name"] = user_data.get("last_name", "")
+                feedback["telegram_id"] = user_data.get("telegram_id", "")
             
             return feedback_list
         except Exception as e:
-            logger.error(f"Ошибка при получении всех отзывов: {e}")
+            logger.error(f"Ошибка при получении обогащенной обратной связи: {e}")
             return []
+
+    # ----- Служебные методы -----
+
+    def health_check(self) -> bool:
+        """
+        Проверяет доступность Google Sheets API.
+        
+        Returns:
+            True, если соединение работает, иначе False
+        """
+        try:
+            if not self.spreadsheet:
+                return False
+                
+            # Пытаемся получить заголовок таблицы
+            title = self.spreadsheet.title
+            return True
+        except Exception as e:
+            logger.error(f"Ошибка при проверке соединения с Google Sheets: {e}")
+            return False
+
+
+# Создаем глобальный экземпляр класса для использования в других модулях
+sheets_manager = None
+
+
+def init_sheets_manager():
+    """Инициализирует глобальный экземпляр SheetsManager"""
+    global sheets_manager
+    
+    # Проверяем, существуют ли необходимые переменные окружения
+    spreadsheet_key = os.environ.get("GOOGLE_SHEETS_KEY")
+    credentials_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+    
+    if not spreadsheet_key or not credentials_path:
+        logger.warning("GOOGLE_SHEETS_KEY или GOOGLE_CREDENTIALS_PATH не найдены в переменных окружения")
+        return None
+    
+    # Создаем экземпляр, если еще не создан
+    if sheets_manager is None:
+        try:
+            sheets_manager = SheetsManager(
+                spreadsheet_key=spreadsheet_key,
+                credentials_path=credentials_path
+            )
+            logger.info("SheetsManager успешно инициализирован")
+        except Exception as e:
+            logger.error(f"Ошибка при инициализации SheetsManager: {e}")
+            return None
+    
+    return sheets_manager
+
+
+def get_sheets_manager():
+    """
+    Возвращает глобальный экземпляр SheetsManager, при необходимости инициализируя его.
+    
+    Returns:
+        Экземпляр SheetsManager или None, если инициализация не удалась
+    """
+    global sheets_manager
+    
+    if sheets_manager is None:
+        sheets_manager = init_sheets_manager()
+    
+    return sheets_manager
+
+
+if __name__ == "__main__":
+    # Тестирование функциональности
+    manager = init_sheets_manager()
+    
+    if manager and manager.health_check():
+        print("Подключение к Google Sheets успешно!")
+        
+        # Пример создания пользователя
+        user = manager.create_user(
+            telegram_id=123456789,
+            username="test_user",
+            first_name="Test",
+            last_name="User"
+        )
+        
+        if user:
+            print(f"Создан пользователь: {user}")
+            
+            # Пример создания сессии
+            session = manager.create_session(
+                user_id=user["id"],
+                language_level="B2",
+                session_data={"topic": "travel"}
+            )
+            
+            if session:
+                print(f"Создана сессия: {session}")
+                
+                # Пример добавления сообщений
+                manager.add_message(session["id"], "user", "Hello, I want to practice English")
+                manager.add_message(session["id"], "assistant", "Hi there! What would you like to talk about?")
+                
+                # Получаем сообщения сессии
+                messages = manager.get_session_messages(session["id"])
+                print(f"Сообщения сессии: {messages}")
+                
+                # Пример добавления обратной связи
+                feedback = manager.add_feedback(
+                    user_id=user["id"],
+                    session_id=session["id"],
+                    rating=5,
+                    comment="Great conversation!"
+                )
+                
+                if feedback:
+                    print(f"Добавлена обратная связь: {feedback}")
+    else:
+        print("Не удалось подключиться к Google Sheets")
