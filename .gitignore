@@ -40,6 +40,11 @@ wheels/
 /logs/*.log
 bot.pid
 
+# Игнорируем учетные данные Google Sheets
+/credentials/
+*.json
+!package.json
+
 # Editors
 .idea/
 .vscode/
