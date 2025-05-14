@@ -1467,8 +1467,23 @@ def handle_admin_feedback(message):
                     # Импортируем модуль для создания отчета
                     from sheets_excel_report import create_temp_excel_for_telegram
                 
-                # Генерируем файл отчета через Google Sheets
-                excel_path, filename = create_temp_excel_for_telegram(sheets_manager)
+                # Преобразуем данные в формат для Excel
+                excel_data = []
+                for record, telegram_id, username, first_name, last_name in feedback_records:
+                    # Создаем запись для Excel
+                    excel_record = {
+                        "Telegram ID": telegram_id,
+                        "Username": username,
+                        "First Name": first_name,
+                        "Last Name": last_name,
+                        "Rating": record.rating,
+                        "Comment": record.comment,
+                        "Date": record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                    }
+                    excel_data.append(excel_record)
+                
+                # Генерируем файл отчета
+                excel_path = create_temp_excel_for_telegram(excel_data, "feedback_report.xlsx")
                 
                 # Отправляем файл
                 with open(excel_path, 'rb') as excel_file:
@@ -1485,7 +1500,7 @@ def handle_admin_feedback(message):
                 except Exception as e:
                     logger.warning(f"Не удалось удалить временный файл: {str(e)}")
                 
-                logger.info(f"Excel-отчет успешно отправлен: {filename}")
+                logger.info("Excel-отчет успешно отправлен")
                 
             except Exception as excel_error:
                 logger.error(f"Ошибка при создании Excel-отчета: {str(excel_error)}")
@@ -1526,9 +1541,40 @@ def create_empty_report(chat_id):
         chat_id: ID чата для отправки отчета
     """
     try:
-        # Отправляем статистический отчет с пустыми значениями
-        logger.info("Создание пустого отчета из-за проблем с Google Sheets")
+        bot.send_message(
+            chat_id,
+            "📝 Создание пустого отчета, так как не удалось подключиться к базе данных."
+        )
         
+        # Создаем пустой Excel-файл
+        empty_data = [{
+            "Информация": "Нет данных обратной связи",
+            "Причина": "Ошибка подключения к Google Sheets"
+        }]
+        
+        # Генерируем временный файл
+        excel_path = create_temp_excel_for_telegram(empty_data, "empty_report.xlsx")
+        
+        # Отправляем файл
+        with open(excel_path, 'rb') as excel_file:
+            bot.send_document(
+                chat_id,
+                excel_file,
+                caption="📊 Пустой отчет (нет данных)"
+            )
+        
+        # Удаляем временный файл
+        try:
+            os.remove(excel_path)
+        except Exception as e:
+            logger.error(f"Не удалось удалить временный файл: {str(e)}")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при создании пустого отчета: {str(e)}")
+        bot.send_message(
+            chat_id,
+            f"❌ Ошибка при создании отчета: {str(e)}"
+        )
         # Текстовый отчет с информацией об ошибке
         report = "📊 *Отчет по обратной связи*\n\n"
         report += "⚠️ *Ошибка подключения к Google Sheets*\n\n"
