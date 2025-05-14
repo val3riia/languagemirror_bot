@@ -531,9 +531,19 @@ def handle_language_level(call):
     }
     
     # Инициализируем сессию пользователя
-    if 'session_manager' in globals():
-        # Используем менеджер сессий с поддержкой БД
-        session_manager.create_session(user_id, user_info)
+    if session_manager is not None:
+        # Используем менеджер сессий с Google Sheets
+        try:
+            session_manager.create_session(user_id, user_info)
+        except Exception as e:
+            logger.error(f"Ошибка при создании сессии в session_manager: {e}")
+            # В случае ошибки создаем сессию в памяти
+            user_sessions[user_id] = {
+                "language_level": level,
+                "messages": [],
+                "last_active": time.time(),
+                "mode": "articles"
+            }
     else:
         # Используем старую систему хранения в памяти
         user_sessions[user_id] = {
@@ -1090,13 +1100,16 @@ def handle_all_messages(message):
     language_level = "B1"  # Значение по умолчанию
     session_mode = "conversation"  # Режим по умолчанию - обычная беседа
     
-    if 'session_manager' in globals():
-        # Проверка через менеджер сессий с БД
-        session = session_manager.get_session(user_id)
-        if session and "language_level" in session:
-            session_exists = True
-            language_level = session.get("language_level", "B1")
-            session_mode = session.get("mode", "conversation")
+    if session_manager is not None:
+        # Проверка через менеджер сессий с Google Sheets
+        try:
+            session = session_manager.get_session(user_id)
+            if session and "language_level" in session:
+                session_exists = True
+                language_level = session.get("language_level", "B1")
+                session_mode = session.get("mode", "conversation")
+        except Exception as e:
+            logger.error(f"Ошибка при получении сессии из session_manager: {e}")
     elif user_id in user_sessions and "language_level" in user_sessions[user_id]:
         # Проверка через старую систему хранения в памяти
         session_exists = True
@@ -1154,8 +1167,11 @@ def handle_all_messages(message):
         )
         
         # Заканчиваем сессию
-        if 'session_manager' in globals():
-            session_manager.end_session(user_id)
+        if session_manager is not None:
+            try:
+                session_manager.end_session(user_id)
+            except Exception as e:
+                logger.error(f"Ошибка при завершении сессии в session_manager: {e}")
         else:
             if user_id in user_sessions:
                 # Сохраняем только информацию для получения обратной связи
@@ -1167,8 +1183,11 @@ def handle_all_messages(message):
         # Стандартный режим разговора
         # Получаем историю сообщений для контекста
         conversation_history = []
-        if 'session_manager' in globals():
-            conversation_history = session_manager.get_messages(user_id)
+        if session_manager is not None:
+            try:
+                conversation_history = session_manager.get_messages(user_id)
+            except Exception as e:
+                logger.error(f"Ошибка при получении сообщений из session_manager: {e}")
         elif user_id in user_sessions and "messages" in user_sessions[user_id]:
             conversation_history = user_sessions[user_id]["messages"]
         
@@ -1176,8 +1195,14 @@ def handle_all_messages(message):
         response = generate_learning_response(user_message, language_level, conversation_history)
         
         # Сохраняем ответ бота в сессии
-        if 'session_manager' in globals():
-            session_manager.add_message_to_session(user_id, "assistant", response)
+        if session_manager is not None:
+            try:
+                session_manager.add_message_to_session(user_id, "assistant", response)
+            except Exception as e:
+                logger.error(f"Ошибка при добавлении сообщения в session_manager: {e}")
+                # В случае ошибки пытаемся использовать резервный способ хранения
+                if user_id in user_sessions and "messages" in user_sessions[user_id]:
+                    user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
         else:
             user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
         
@@ -1653,14 +1678,10 @@ def main():
         logger.info("Starting bot polling with none_stop=True...")
         
         # Проверяем настройки сессий перед запуском
-        if 'session_manager' in globals() and session_manager is not None:
+        if session_manager is not None:
             logger.info("Using session_manager for bot")
-        elif 'user_sessions' in globals():
-            logger.info(f"Using user_sessions dictionary for bot, contains {len(user_sessions)} sessions")
         else:
-            logger.error("No session storage available!")
-            global user_sessions
-            user_sessions = {}  # Создаем пустой словарь на всякий случай
+            logger.info(f"Using user_sessions dictionary for bot, contains {len(user_sessions)} sessions")
         
         # Запускаем бота с улучшенной обработкой ошибок
         bot.polling(none_stop=True, interval=2, timeout=60)
