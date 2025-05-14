@@ -709,7 +709,6 @@ def handle_feedback(call):
                 "feedback_type": feedback_type,
                 "last_active": time.time()
             }
-            }
         else:
             user_sessions[user_id] = {
                 "feedback_type": feedback_type,
