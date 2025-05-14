@@ -278,6 +278,109 @@ class SheetsManager:
             logger.error(f"Ошибка при получении пользователя по telegram_id: {e}")
             return None
 
+    def set_feedback_bonus_used(self, telegram_id: int, used: bool = True) -> bool:
+        """
+        Устанавливает флаг использования бонуса за обратную связь.
+        
+        Args:
+            telegram_id: ID пользователя в Telegram
+            used: True - бонус использован, False - бонус не использован
+            
+        Returns:
+            True, если обновление прошло успешно, иначе False
+        """
+        try:
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return False
+                
+            # Получаем пользователя
+            user_data = self.get_user_by_telegram_id(telegram_id)
+            if not user_data:
+                logger.warning(f"Пользователь с telegram_id={telegram_id} не найден для обновления флага бонуса")
+                return False
+                
+            worksheet = self.spreadsheet.worksheet("users")
+            
+            # Находим строку пользователя
+            cell = self._execute_with_retry(
+                worksheet.find, str(telegram_id), in_column=2
+            )
+            
+            if not cell:
+                logger.warning(f"Не удалось найти строку для пользователя {telegram_id}")
+                return False
+                
+            row = cell.row
+            
+            # Обновляем данные в таблице (предполагаем, что колонка G - feedback_bonus_used)
+            worksheet.update_cell(row, 7, "TRUE" if used else "FALSE")
+            
+            logger.info(f"Статус бонуса пользователя {telegram_id} успешно обновлен: {used}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении статуса бонуса пользователя: {e}")
+            return False
+            
+    def update_user_discussion_stats(self, telegram_id: int, date: str) -> bool:
+        """
+        Обновляет статистику использования запросов пользователя.
+        
+        Args:
+            telegram_id: ID пользователя в Telegram
+            date: Дата в формате YYYY-MM-DD
+            
+        Returns:
+            True, если обновление прошло успешно, иначе False
+        """
+        try:
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return False
+                
+            # Получаем пользователя
+            user_data = self.get_user_by_telegram_id(telegram_id)
+            if not user_data:
+                logger.warning(f"Пользователь с telegram_id={telegram_id} не найден для обновления статистики")
+                return False
+                
+            worksheet = self.spreadsheet.worksheet("users")
+            
+            # Находим строку пользователя
+            cell = self._execute_with_retry(
+                worksheet.find, str(telegram_id), in_column=2
+            )
+            
+            if not cell:
+                logger.warning(f"Не удалось найти строку для пользователя {telegram_id}")
+                return False
+                
+            row = cell.row
+            
+            # Получаем текущие значения
+            last_discussion_date = worksheet.cell(row, 5).value  # Предполагаем, что столбец E
+            discussions_count = worksheet.cell(row, 6).value  # Предполагаем, что столбец F
+            
+            # Обновляем значения
+            if last_discussion_date == date:
+                # Если это тот же день, увеличиваем счетчик
+                discussions_count = int(discussions_count or 0) + 1
+            else:
+                # Если новый день, сбрасываем счетчик
+                discussions_count = 1
+                
+            # Обновляем данные в таблице
+            worksheet.update_cell(row, 5, date)  # Дата последнего обсуждения
+            worksheet.update_cell(row, 6, discussions_count)  # Количество обсуждений
+            
+            logger.info(f"Статистика пользователя {telegram_id} успешно обновлена: {date}, {discussions_count}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении статистики пользователя: {e}")
+            return False
+    
     def create_user(
         self, 
         telegram_id: int, 

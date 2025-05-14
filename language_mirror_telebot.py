@@ -466,12 +466,27 @@ def handle_discussion(message):
             callback_data=f"level_{level}"
         ))
     
+    # Если у нас есть менеджер сессий и пользователь не является администратором
+    # Обновляем статистику использования
+    if session_manager and session_manager.sheets_manager and not is_admin:
+        try:
+            # Обновляем статистику использования в Google Sheets
+            session_manager.sheets_manager.update_user_discussion_stats(
+                telegram_id=user_id,
+                date=str(today)
+            )
+            logger.info(f"Статистика пользователя {username} (ID: {user_id}) обновлена")
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении статистики: {str(e)}")
+    
+    # Отправляем сообщение с выбором уровня языка
     bot.send_message(
-        message.chat.id,
-        "Before we begin, I'd like to know your English proficiency level "
-        "so I can adapt to your needs. Please select your level:",
+        chat_id,
+        "Прежде чем начать, я хотел бы узнать ваш уровень владения английским языком, "
+        "чтобы адаптировать свои ответы к вашим потребностям. Пожалуйста, выберите ваш уровень:",
         reply_markup=markup
     )
+    logger.info(f"Пользователю {username} (ID: {user_id}) предложен выбор уровня языка")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('level_'))
 def handle_language_level(call):

@@ -129,6 +129,45 @@ def create_excel_from_feedback_data(
         return tmp_path, filename
 
 
+def create_temp_excel_for_telegram(
+    data: List[Dict[str, Any]], 
+    filename: Optional[str] = None
+) -> str:
+    """
+    Создает временный файл Excel для отправки в Telegram.
+    
+    Args:
+        data: Список словарей с данными
+        filename: Имя выходного файла (опционально)
+        
+    Returns:
+        Путь к созданному временному файлу
+    """
+    # Преобразуем данные в DataFrame
+    df = pd.DataFrame(data)
+    
+    # Формируем имя файла, если не указано
+    if not filename:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        filename = f"feedback_report_{timestamp}.xlsx"
+    
+    # Создаем временный файл
+    with tempfile.NamedTemporaryFile(suffix=".xlsx", delete=False) as tmp:
+        tmp_path = tmp.name
+        
+    # Сохраняем в файл
+    with pd.ExcelWriter(tmp_path, engine="xlsxwriter") as writer:
+        df.to_excel(writer, sheet_name="Данные", index=False)
+        
+        # Добавляем автоподбор ширины столбцов
+        worksheet = writer.sheets["Данные"]
+        for i, col in enumerate(df.columns):
+            column_len = max(df[col].astype(str).str.len().max(), len(col) + 2)
+            worksheet.set_column(i, i, column_len)
+    
+    return tmp_path
+
+
 def create_dummy_excel(filename: Optional[str] = None) -> Tuple[Union[BytesIO, str], str]:
     """
     Создает пустой Excel-файл при ошибках доступа к данным.
