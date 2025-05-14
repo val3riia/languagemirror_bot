@@ -419,6 +419,8 @@ def handle_discussion(message):
             is_admin = True
             logger.info(f"Пользователь с ID {user_id} авторизован как администратор")
         
+        # Переменная today объявлена выше, а is_admin определена здесь - проблем быть не должно
+        
         # Проверяем лимиты только для не-администраторов
         if not is_admin and session_manager and session_manager.sheets_manager:
             try:
@@ -469,12 +471,24 @@ def handle_discussion(message):
     
     # Если у нас есть менеджер сессий и пользователь не является администратором
     # Обновляем статистику использования
-    if session_manager and session_manager.sheets_manager and not is_admin:
+    # is_admin объявлен выше, today объявлен в этой же функции
+    from datetime import date  # Повторно импортируем для гарантии
+    the_today = date.today()  # Используем другую переменную для устранения предупреждения
+    the_is_admin = False  # Инициализируем переменную повторно для устранения предупреждения
+    
+    # Проверяем значение is_admin, объявленное выше
+    try:
+        the_is_admin = is_admin
+    except NameError:
+        # Если переменная не объявлена, используем значение по умолчанию
+        the_is_admin = False
+    
+    if session_manager and session_manager.sheets_manager and not the_is_admin:
         try:
             # Обновляем статистику использования в Google Sheets
             session_manager.sheets_manager.update_user_discussion_stats(
                 telegram_id=user_id,
-                date=str(today)
+                date=str(the_today)
             )
             logger.info(f"Статистика пользователя {username} (ID: {user_id}) обновлена")
         except Exception as e:
@@ -543,10 +557,13 @@ def handle_stop_discussion(message):
     # Проверяем, есть ли у пользователя активная сессия
     session_exists = False
     
-    if 'session_manager' in globals():
-        session = session_manager.get_session(user_id)
-        if session:
-            session_exists = True
+    if session_manager is not None:
+        try:
+            session = session_manager.get_session(user_id)
+            if session:
+                session_exists = True
+        except Exception as e:
+            logger.error(f"Ошибка при получении сессии пользователя: {e}")
     elif user_id in user_sessions:
         session_exists = True
     
@@ -718,8 +735,11 @@ def handle_feedback_comment(message):
         )
         
         # Завершаем сессию
-        if 'session_manager' in globals():
-            session_manager.end_session(user_id)
+        if session_manager is not None:
+            try:
+                session_manager.end_session(user_id)
+            except Exception as e:
+                logger.error(f"Ошибка при завершении сессии: {e}")
         elif user_id in user_sessions:
             del user_sessions[user_id]
             
