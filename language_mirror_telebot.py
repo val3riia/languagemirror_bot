@@ -1684,13 +1684,27 @@ def main():
             logger.info(f"Using user_sessions dictionary for bot, contains {len(user_sessions)} sessions")
         
         # Запускаем бота с улучшенной обработкой ошибок
-        bot.polling(none_stop=True, interval=2, timeout=60)
+        def polling_thread():
+            try:
+                bot.polling(none_stop=True, interval=2, timeout=60)
+            except Exception as e:
+                logger.error(f"Error in polling thread: {str(e)}")
+                import traceback
+                error_trace = traceback.format_exc()
+                logger.error(f"Polling thread traceback: {error_trace}")
+                
+        # Запускаем в отдельном потоке, чтобы не блокировать основной поток
+        polling_worker = threading.Thread(target=polling_thread, daemon=True)
+        polling_worker.start()
+        logger.info("Bot polling thread started successfully")
+        return polling_worker
     except Exception as e:
-        logger.error(f"Error in polling: {str(e)}")
+        logger.error(f"Error setting up polling: {str(e)}")
         # Подробный лог ошибки для отладки
         import traceback
         error_trace = traceback.format_exc()
         logger.error(f"Traceback: {error_trace}")
+        return None
 
 if __name__ == "__main__":
     main()
