@@ -719,21 +719,15 @@ def handle_feedback_comment(message):
         "unknown": "Rating not provided"
     }
     
-    # Сохраняем обратную связь в базу данных через API
+    # Сохраняем обратную связь в Google Sheets
     try:
-        # Пытаемся отправить HTTP запрос для сохранения обратной связи в БД
-        feedback_data = {
-            "user_id": user_id,
-            "username": message.from_user.username or f"user_{user_id}",
-            "rating": feedback_type,
-            "comment": comment
-        }
+        # Минимальное количество слов для бонуса
+        min_words_for_bonus = int(os.environ.get("FEEDBACK_COMMENT_MIN_WORDS", "3"))
         
-        # Используем requests.post в отдельном потоке, чтобы не блокировать бота
-        threading.Thread(
-            target=lambda: requests.post("http://localhost:5000/api/feedback", json=feedback_data),
-            daemon=True
-        ).start()
+        # Получаем информацию о пользователе
+        username = message.from_user.username or ""
+        first_name = message.from_user.first_name or ""
+        last_name = message.from_user.last_name or ""
         
         # Также сохраняем обратную связь напрямую в БД через SQLAlchemy
         from models import db, User, Feedback
