@@ -784,8 +784,13 @@ def handle_feedback_comment(message):
                             comment=comment
                         )
                     
+                    # Минимальное количество слов для получения бонуса
+                    min_words_for_bonus = 3
+                    
                     # Проверяем, содержит ли комментарий минимум слов для предоставления бонуса
                     words = comment.split()
+                    logger.info(f"Комментарий содержит {len(words)} слов (минимум для бонуса: {min_words_for_bonus})")
+                    
                     if len(words) >= min_words_for_bonus:
                         # Обновляем статус обратной связи пользователя, предоставляя бонус
                         sheets_manager.set_feedback_bonus_used(user_id, False)  # Разрешаем использовать бонусный запрос
