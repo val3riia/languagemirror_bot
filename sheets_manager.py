@@ -47,9 +47,18 @@ class SheetsManager:
         """
         # Настройка подключения
         self.spreadsheet_key = spreadsheet_key or os.environ.get("GOOGLE_SHEETS_KEY")
-        self.credentials_path = credentials_path or os.environ.get(
-            "GOOGLE_CREDENTIALS_PATH"
-        )
+        
+        # Определение пути к файлу учетных данных
+        default_creds_path = os.path.join(os.getcwd(), "credentials/google_service_account.json") 
+        env_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+        self.credentials_path = credentials_path or env_creds_path or default_creds_path
+        
+        # Логирование для отладки
+        if self.credentials_path:
+            abs_path = os.path.abspath(self.credentials_path)
+            exists = os.path.isfile(abs_path)
+            logger.info(f"Абсолютный путь к учетным данным: {abs_path} (файл существует: {exists})")
+        
         self.retry_limit = retry_limit
         self.retry_delay = retry_delay
         self.client = None
@@ -60,18 +69,17 @@ class SheetsManager:
             logger.warning("GOOGLE_SHEETS_KEY не задан в переменных окружения")
             return
 
-        # Проверяем наличие либо GOOGLE_SERVICE_ACCOUNT_JSON, либо файла учетных данных
-        google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-        if not google_creds_json and not self.credentials_path:
-            logger.warning("Ни GOOGLE_SERVICE_ACCOUNT_JSON, ни GOOGLE_CREDENTIALS_PATH не заданы в переменных окружения")
-            return
+        # Проверяем наличие файла учетных данных
+        if not self.credentials_path or not os.path.exists(self.credentials_path):
+            logger.warning(f"Файл с учетными данными сервисного аккаунта не найден: {self.credentials_path}")
             
-        # Проверяем наличие файла учетных данных только если используется путь и отсутствует JSON
-        if not google_creds_json and self.credentials_path and not os.path.exists(self.credentials_path):
-            logger.warning(
-                f"Файл с учетными данными сервисного аккаунта не найден: {self.credentials_path}"
-            )
-            return
+            # Проверяем наличие переменной среды GOOGLE_SERVICE_ACCOUNT_JSON только если файл отсутствует
+            google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if not google_creds_json:
+                logger.warning("Ни файл учетных данных, ни GOOGLE_SERVICE_ACCOUNT_JSON не найдены")
+                return
+            
+            logger.info("Файл не найден, но обнаружен GOOGLE_SERVICE_ACCOUNT_JSON в переменных окружения")
 
         try:
             # Аутентификация и подключение
