@@ -12,3 +12,8 @@ xlsxwriter>=3.0.2
 requests>=2.26.0
 httpx>=0.23.0
 trafilatura>=1.4.0
+gspread
+oauth2client
+openai
+telegram
+werkzeug

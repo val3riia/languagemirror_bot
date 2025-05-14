@@ -3,7 +3,7 @@
 
 """
 Language Mirror Bot - A Telegram bot for interactive language learning.
-This version is adapted to work with the telebot (PyTelegramBotAPI) library.
+Эта версия использует Google Sheets для хранения данных и UptimeBot для хостинга.
 """
 
 import os
