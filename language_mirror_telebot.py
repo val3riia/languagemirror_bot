@@ -147,7 +147,7 @@ try:
             
             if sheets_manager:
                 # Создаем экземпляр менеджера сессий
-                session_manager = SheetSessionManager(sheets_manager)
+                session_manager = SheetSessionManager(sheets_mgr=sheets_manager)
                 logger.info("Используется менеджер сессий с Google Sheets")
             else:
                 # Если sheets_manager не инициализирован, используем словарь в памяти

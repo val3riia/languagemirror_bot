@@ -22,15 +22,21 @@ class SheetSessionManager:
     Может быть использован как замена в памяти SessionManager.
     """
 
-    def __init__(self, session_timeout: int = 1800):
+    def __init__(self, sheets_mgr=None, session_timeout: int = 1800):
         """
         Инициализация менеджера сессий.
         
         Args:
+            sheets_mgr: Экземпляр SheetsManager для работы с Google Sheets
             session_timeout: Таймаут сессии в секундах (по умолчанию 30 минут)
         """
         self.session_timeout = session_timeout
-        self.sheets_manager = get_sheets_manager()
+        
+        # Используем уже существующий экземпляр или создаем новый
+        if sheets_mgr is not None:
+            self.sheets_manager = sheets_mgr
+        else:
+            self.sheets_manager = get_sheets_manager()
         
         # Проверяем доступность Google Sheets
         if not self.sheets_manager or not self.sheets_manager.spreadsheet:
