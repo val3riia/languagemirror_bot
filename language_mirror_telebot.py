@@ -122,6 +122,11 @@ LANGUAGE_LEVELS = {
     "C2": "Proficiency - You can understand virtually everything heard or read"
 }
 
+# Глобальные переменные для хранения менеджера сессий
+session_manager = None
+sheets_manager = None
+user_sessions = {}
+
 # Импортируем менеджер сессий с поддержкой Google Sheets
 try:
     from sheets_session_manager import SheetSessionManager
@@ -147,19 +152,14 @@ try:
             else:
                 # Если sheets_manager не инициализирован, используем словарь в памяти
                 logger.warning("Не удалось инициализировать sheets_manager. Используются сессии в памяти")
-                user_sessions = {}
         except Exception as e:
             logger.warning(f"Ошибка при получении экземпляра sheets_manager: {e}. Используются сессии в памяти")
-            user_sessions = {}
     else:
         # Если переменные окружения не настроены, используем словарь в памяти
         logger.warning("GOOGLE_CREDENTIALS_PATH или GOOGLE_SHEETS_KEY не найдены. Используются сессии в памяти")
-        user_sessions = {}
         
 except Exception as e:
     logger.warning(f"Ошибка инициализации Google Sheets: {e}. Используются сессии в памяти")
-    # Простое хранилище сессий в памяти (для обратной совместимости)
-    user_sessions = {}
 
 # Примеры тем для обсуждения разного уровня
 CONVERSATION_TOPICS = {
@@ -1651,12 +1651,25 @@ def main():
     # Запускаем бота с polling в non-threaded режиме с более строгими таймаутами
     try:
         logger.info("Starting bot polling with none_stop=True...")
-        bot.polling(none_stop=True, interval=1, timeout=30)
+        
+        # Проверяем настройки сессий перед запуском
+        if 'session_manager' in globals() and session_manager is not None:
+            logger.info("Using session_manager for bot")
+        elif 'user_sessions' in globals():
+            logger.info(f"Using user_sessions dictionary for bot, contains {len(user_sessions)} sessions")
+        else:
+            logger.error("No session storage available!")
+            global user_sessions
+            user_sessions = {}  # Создаем пустой словарь на всякий случай
+        
+        # Запускаем бота с улучшенной обработкой ошибок
+        bot.polling(none_stop=True, interval=2, timeout=60)
     except Exception as e:
         logger.error(f"Error in polling: {str(e)}")
-        # Раскомментировано для отладки текущих проблем
+        # Подробный лог ошибки для отладки
         import traceback
-        logger.error(traceback.format_exc())
+        error_trace = traceback.format_exc()
+        logger.error(f"Traceback: {error_trace}")
 
 if __name__ == "__main__":
     main()
