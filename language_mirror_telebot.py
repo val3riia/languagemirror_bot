@@ -14,8 +14,9 @@ import logging
 import json
 import requests
 import threading
-from datetime import datetime
+from datetime import datetime, date
 from openrouter_client import OpenRouterClient
+from sheets_excel_report import create_temp_excel_for_telegram
 
 # Настройка логирования
 logging.basicConfig(
