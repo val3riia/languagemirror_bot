@@ -308,39 +308,80 @@ def get_feedback():
 @app.route('/api/feedback', methods=['POST'])
 def add_feedback():
     """API endpoint to add feedback"""
+    global sheets_manager
+    
     data = request.json
     if not data:
         return jsonify({"error": "No data provided"}), 400
     
     try:
-        # Если база данных настроена, сохраняем в неё
-        if app.config.get("SQLALCHEMY_DATABASE_URI"):
-            # Пробуем найти пользователя по telegram_id
-            telegram_id = int(data.get("user_id", 0))
-            user = User.query.filter_by(telegram_id=telegram_id).first()
-            
-            # Если пользователь не найден, создаем его
-            if not user:
-                user = User(
+        # Сначала пробуем сохранить в Google Sheets
+        if google_sheets_available and sheets_manager:
+            try:
+                # Извлекаем данные из запроса
+                telegram_id = data.get("user_id", 0)
+                username = data.get("username", "unknown")
+                first_name = data.get("first_name", "")
+                last_name = data.get("last_name", "")
+                rating = data.get("rating", "unknown")
+                comment = data.get("comment", "")
+                session_id = data.get("session_id")
+                
+                # Добавляем отзыв в Google Sheets
+                sheets_manager.add_feedback(
                     telegram_id=telegram_id,
-                    username=data.get("username", "unknown")
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    session_id=session_id,
+                    rating=rating,
+                    comment=comment
                 )
-                db.session.add(user)
-                db.session.commit()
-            
-            # Создаем запись обратной связи
-            feedback = Feedback(
-                user_id=user.id,
-                rating=data.get("rating", "unknown"),
-                comment=data.get("comment", "")
-            )
-            
-            db.session.add(feedback)
-            db.session.commit()
-            
-            return jsonify({"success": True, "id": feedback.id}), 201
+                
+                logger.info(f"Feedback successfully added to Google Sheets. User: {username}, Rating: {rating}")
+                
+                # Получаем ID записи (хотя в Google Sheets это не так важно)
+                # В Google Sheets ID формируется автоматически
+                return jsonify({"success": True, "source": "google_sheets"}), 201
+                
+            except Exception as e:
+                logger.error(f"Error adding feedback to Google Sheets: {e}")
+                # В случае ошибки переходим к следующему методу
         
-        # Если база данных не настроена, сохраняем в памяти
+        # Затем пробуем сохранить в PostgreSQL
+        if app.config.get("SQLALCHEMY_DATABASE_URI"):
+            try:
+                # Пробуем найти пользователя по telegram_id
+                telegram_id = int(data.get("user_id", 0))
+                user = User.query.filter_by(telegram_id=telegram_id).first()
+                
+                # Если пользователь не найден, создаем его
+                if not user:
+                    user = User(
+                        telegram_id=telegram_id,
+                        username=data.get("username", "unknown")
+                    )
+                    db.session.add(user)
+                    db.session.commit()
+                
+                # Создаем запись обратной связи
+                feedback = Feedback(
+                    user_id=user.id,
+                    rating=data.get("rating", "unknown"),
+                    comment=data.get("comment", "")
+                )
+                
+                db.session.add(feedback)
+                db.session.commit()
+                
+                logger.info(f"Feedback successfully added to PostgreSQL. User: {user.username}, Rating: {feedback.rating}")
+                return jsonify({"success": True, "id": feedback.id, "source": "postgresql"}), 201
+                
+            except Exception as e:
+                logger.error(f"Error adding feedback to PostgreSQL: {e}")
+                # В случае ошибки переходим к следующему методу
+        
+        # Если другие методы не сработали, сохраняем в памяти
         feedback_item = {
             "id": len(feedback_data) + 1,
             "user_id": data.get("user_id", "unknown"),
@@ -351,11 +392,12 @@ def add_feedback():
         }
         
         feedback_data.append(feedback_item)
-        return jsonify({"success": True, "id": feedback_item["id"]}), 201
+        logger.info(f"Feedback added to memory storage. Total items: {len(feedback_data)}")
+        return jsonify({"success": True, "id": feedback_item["id"], "source": "memory"}), 201
         
-    except Exception:
-        logger.error("Error adding feedback. Check your database connection.")
-        return jsonify({"error": "Database error occurred while adding feedback"}), 500
+    except Exception as e:
+        logger.error(f"Error adding feedback: {e}")
+        return jsonify({"error": "Error occurred while adding feedback"}), 500
 
 @app.errorhandler(404)
 def page_not_found(e):

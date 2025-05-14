@@ -21,9 +21,10 @@ Language Mirror is an intelligent Telegram bot designed for personalized English
 ## Requirements
 
 - Python 3.8+
-- PostgreSQL database
 - Telegram Bot API token
 - OpenRouter API key (for accessing GPT models)
+- Google service account credentials (for Google Sheets integration) - recommended
+- PostgreSQL database (optional, legacy storage method)
 
 ## Installation
 
@@ -43,16 +44,67 @@ Language Mirror is an intelligent Telegram bot designed for personalized English
 Create a `.env` file with the following variables:
 
 ```
+# Required
 TELEGRAM_TOKEN=your_telegram_bot_token
-DATABASE_URL=your_postgresql_database_url
 OPENROUTER_API_KEY=your_openrouter_api_key
-ADMIN_USERNAME=admin_telegram_username
-ADMIN_USER_ID=admin_telegram_user_id
+ADMIN_USERNAME=admin_telegram_username (без символа @)
+ADMIN_USER_ID=admin_telegram_user_id (числовое значение)
+
+# Google Sheets (рекомендуется)
+GOOGLE_CREDENTIALS_PATH=path/to/your/service-account-credentials.json
+GOOGLE_SHEETS_KEY=your_spreadsheet_id
+USE_GOOGLE_SHEETS=True
+
+# PostgreSQL (опционально)
+DATABASE_URL=your_postgresql_database_url
+
+# Optional settings
+BOT_AUTO_START=True
+FEEDBACK_COMMENT_MIN_WORDS=3
+MAX_DAILY_DISCUSSIONS=5
 ```
 
-## Database Setup
+See `.env.example` for all available configuration options.
 
-The bot uses PostgreSQL for data storage. The database schema will be automatically created when the bot starts for the first time.
+## Data Storage Setup
+
+### Google Sheets (Recommended)
+
+The bot now primarily uses Google Sheets for data storage, which simplifies hosting and eliminates the need for a database server.
+
+To set up Google Sheets storage:
+
+1. Create a Google Cloud project and enable the Google Sheets API
+2. Create a service account and download the JSON credentials file
+3. Create a new Google Sheets spreadsheet and share it with the service account email (with Editor permissions)
+4. Set the following environment variables:
+   ```
+   GOOGLE_CREDENTIALS_PATH=path/to/your/service-account-credentials.json
+   GOOGLE_SHEETS_KEY=your_spreadsheet_id
+   USE_GOOGLE_SHEETS=True
+   ```
+
+The bot will automatically create the necessary sheets and structure when it first connects.
+
+### PostgreSQL (Legacy)
+
+Alternatively, the bot can use PostgreSQL for data storage. The database schema will be automatically created when the bot starts for the first time. This is the legacy storage method and is optional when Google Sheets is configured.
+
+## Hosting Options
+
+### UptimeBot Hosting (Recommended)
+
+The bot is now designed to work seamlessly with UptimeBot for hosting. UptimeBot provides a simple and free way to keep your bot running 24/7 without requiring a dedicated server. With the Google Sheets integration, this is now the recommended hosting solution.
+
+To set up hosting with UptimeBot:
+1. Create a UptimeBot account
+2. Create a new monitor pointing to your bot script (e.g., `run_bot_stable.py`)
+3. Set the `BOT_AUTO_START=True` environment variable
+4. Upload your credentials file for Google Sheets
+
+### Render.com (Legacy)
+
+The bot can still be hosted on Render.com using their web service. This was the previous recommended hosting method when using PostgreSQL, but requires a paid plan for reliable operation.
 
 ## Admin Features
 
@@ -60,6 +112,7 @@ Designated administrators can access additional features:
 - View feedback from users via the `/admin_feedback` command
 - Unlimited use of the `/discussion` command
 - Export feedback reports in Excel format
+- Download feedback data directly from the bot via Telegram
 
 ## License
 
