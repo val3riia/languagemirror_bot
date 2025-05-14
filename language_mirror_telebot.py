@@ -1650,12 +1650,13 @@ def main():
     
     # Запускаем бота с polling в non-threaded режиме с более строгими таймаутами
     try:
-        bot.polling(none_stop=True, interval=0, timeout=20)
-    except Exception:
-        logger.error("Error in polling")
-        # При необходимости отладки раскомментируйте
-        # import traceback
-        # logger.error(traceback.format_exc())
+        logger.info("Starting bot polling with none_stop=True...")
+        bot.polling(none_stop=True, interval=1, timeout=30)
+    except Exception as e:
+        logger.error(f"Error in polling: {str(e)}")
+        # Раскомментировано для отладки текущих проблем
+        import traceback
+        logger.error(traceback.format_exc())
 
 if __name__ == "__main__":
     main()
