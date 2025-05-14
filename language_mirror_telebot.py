@@ -1252,7 +1252,7 @@ def handle_admin_feedback(message):
             
             # Создаем экземпляр менеджера Google Sheets
             sheets_manager = SheetsManager(
-                creds_path=google_creds_path, 
+                credentials_path=google_creds_path, 
                 spreadsheet_key=google_sheets_key
             )
             
@@ -1265,36 +1265,48 @@ def handle_admin_feedback(message):
                 f"📊 Найдено {len(feedback_data)} записей обратной связи"
             )
             
-            # Формируем структуру, аналогичную той, что была при работе с PostgreSQL
-            # для совместимости с кодом отчета
+            # Адаптируем структуру данных из Google Sheets для работы с существующим кодом отчета
             for feedback in feedback_data:
-                # Получаем информацию о пользователе
-                user_id = feedback.get('user_id')
-                timestamp = feedback.get('timestamp', datetime.now())
-                rating = feedback.get('rating')
+                # Получаем необходимые данные
+                telegram_id = feedback.get('telegram_id', '0')
+                try:
+                    telegram_id = int(telegram_id)
+                except ValueError:
+                    telegram_id = 0
+                    
+                username = feedback.get('username', '')
+                first_name = feedback.get('first_name', '')
+                last_name = feedback.get('last_name', '')
+                
+                # Значения по умолчанию для обязательных полей
+                rating = feedback.get('rating', 'unknown')
                 comment = feedback.get('comment', '')
                 
-                # Создаем аналог записи Feedback для совместимости
+                # Обрабатываем временную метку, которая может быть строкой
+                created_at = feedback.get('created_at', '')
+                try:
+                    if created_at:
+                        timestamp = datetime.fromisoformat(created_at)
+                    else:
+                        timestamp = datetime.now()
+                except (ValueError, TypeError):
+                    timestamp = datetime.now()
+                
+                # Создаем объект Feedback для совместимости со старым кодом
                 fb = type('Feedback', (), {
                     'rating': rating,
                     'comment': comment,
                     'timestamp': timestamp,
-                    'user_id': user_id
+                    'user_id': telegram_id  # Используем telegram_id вместо user_id
                 })
-                
-                # Получаем данные пользователя
-                telegram_id = feedback.get('telegram_id', 0)
-                username = feedback.get('username', 'unknown')
-                first_name = feedback.get('first_name', 'Unknown')
-                last_name = feedback.get('last_name', 'User')
                 
                 # Добавляем запись в список
                 feedback_records.append((
                     fb,
                     telegram_id,
-                    username,
-                    first_name,
-                    last_name
+                    username or 'unknown',
+                    first_name or 'Unknown',
+                    last_name or 'User'
                 ))
                 
             # Отладочное сообщение

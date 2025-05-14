@@ -91,8 +91,52 @@ if database_url:
 else:
     logger.error("DATABASE_URL environment variable not set. Bot будет работать с ограниченной функциональностью.")
 
-# Temporary storage for feedback data (for backward compatibility)
+# Переменные для хранения менеджера Google Sheets и данных обратной связи
+sheets_manager = None
 feedback_data = []
+
+# Инициализация Google Sheets
+def init_google_sheets():
+    """Инициализация Google Sheets для хранения данных."""
+    global sheets_manager
+    
+    try:
+        # Проверяем наличие переменных окружения для Google Sheets
+        google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+        google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY")
+        use_google_sheets = os.environ.get("USE_GOOGLE_SHEETS", "True").lower() == "true"
+        
+        if use_google_sheets and google_creds_path and google_sheets_key:
+            from sheets_manager import SheetsManager
+            
+            logger.info("Initializing Google Sheets for data storage")
+            sheets_manager = SheetsManager(
+                credentials_path=google_creds_path,
+                spreadsheet_key=google_sheets_key
+            )
+            
+            if sheets_manager and sheets_manager.sheet:
+                logger.info("Google Sheets initialized successfully")
+                return True
+            else:
+                logger.warning("Google Sheets not fully initialized, falling back to memory storage")
+                return False
+        else:
+            if not use_google_sheets:
+                logger.info("Google Sheets disabled in configuration, using memory storage")
+            else:
+                logger.warning("Google Sheets configuration missing, falling back to memory storage")
+            return False
+            
+    except ImportError:
+        logger.warning("Google Sheets packages not installed, falling back to memory storage")
+        return False
+    except Exception as e:
+        logger.error(f"Error initializing Google Sheets: {e}")
+        return False
+
+# Попытка инициализации Google Sheets
+google_sheets_available = init_google_sheets()
 
 # Start bot in separate thread
 def start_bot_thread():
@@ -184,34 +228,82 @@ def admin_feedback():
 @app.route('/api/feedback', methods=['GET'])
 def get_feedback():
     """API endpoint to get feedback data"""
-    # Если база данных не настроена, используем данные из памяти
-    if not app.config.get("SQLALCHEMY_DATABASE_URI"):
-        return jsonify(feedback_data)
+    global sheets_manager
     
-    try:
-        # Получаем данные из базы данных
-        feedback_items = Feedback.query.order_by(Feedback.timestamp.desc()).all()
-        result = []
-        
-        for item in feedback_items:
-            # Находим пользователя
-            user = User.query.get(item.user_id)
-            username = user.username if user else "unknown"
+    # Сначала пробуем получить данные из Google Sheets
+    if google_sheets_available and sheets_manager:
+        try:
+            # Получаем данные обратной связи из Google Sheets
+            google_sheets_data = sheets_manager.get_all_feedback()
             
-            result.append({
-                "id": item.id,
-                "user_id": user.telegram_id if user else "unknown",
-                "username": username,
-                "rating": item.rating,
-                "comment": item.comment or "",
-                "timestamp": item.timestamp.isoformat()
-            })
+            # Преобразуем данные в нужный формат
+            result = []
+            for item in google_sheets_data:
+                # Получаем необходимые данные и устанавливаем значения по умолчанию
+                telegram_id = item.get('telegram_id', '')
+                username = item.get('username', 'unknown')
+                rating = item.get('rating', 'unknown')
+                comment = item.get('comment', '')
+                
+                # Форматируем timestamp
+                timestamp = item.get('created_at', '')
+                if not timestamp:
+                    timestamp = datetime.now().isoformat()
+                
+                # Проверяем, есть ли id (может отсутствовать в Google Sheets)
+                item_id = item.get('id', None)
+                if item_id is None:
+                    # Если id нет, генерируем его на основе индекса
+                    item_id = len(result) + 1
+                
+                result.append({
+                    "id": item_id,
+                    "user_id": telegram_id,
+                    "username": username,
+                    "rating": rating,
+                    "comment": comment,
+                    "timestamp": timestamp
+                })
+            
+            # Сортируем результаты по времени (новые сначала)
+            result.sort(key=lambda x: x["timestamp"], reverse=True)
+            logger.info(f"Successfully retrieved {len(result)} feedback items from Google Sheets")
+            return jsonify(result)
         
-        return jsonify(result)
-    except Exception:
-        logger.error("Error getting feedback. Check your database connection.")
-        # В случае ошибки базы данных, возвращаем данные из памяти
-        return jsonify(feedback_data)
+        except Exception as e:
+            logger.error(f"Error getting feedback from Google Sheets: {e}")
+            # В случае ошибки переходим к следующему методу
+    
+    # Затем пробуем получить данные из базы данных PostgreSQL
+    if app.config.get("SQLALCHEMY_DATABASE_URI"):
+        try:
+            # Получаем данные из базы данных
+            feedback_items = Feedback.query.order_by(Feedback.timestamp.desc()).all()
+            result = []
+            
+            for item in feedback_items:
+                # Находим пользователя
+                user = User.query.get(item.user_id)
+                username = user.username if user else "unknown"
+                
+                result.append({
+                    "id": item.id,
+                    "user_id": user.telegram_id if user else "unknown",
+                    "username": username,
+                    "rating": item.rating,
+                    "comment": item.comment or "",
+                    "timestamp": item.timestamp.isoformat()
+                })
+            
+            logger.info(f"Successfully retrieved {len(result)} feedback items from PostgreSQL")
+            return jsonify(result)
+        except Exception as e:
+            logger.error(f"Error getting feedback from PostgreSQL: {e}")
+            # В случае ошибки базы данных, переходим к следующему методу
+    
+    # Если другие методы не сработали, возвращаем данные из памяти
+    logger.warning("Using in-memory feedback data as fallback")
+    return jsonify(feedback_data)
 
 @app.route('/api/feedback', methods=['POST'])
 def add_feedback():
