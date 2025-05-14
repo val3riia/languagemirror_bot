@@ -130,17 +130,27 @@ try:
     # Проверяем наличие необходимых переменных окружения
     google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
     google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY")
+    google_service_account_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     
-    if google_creds_path and google_sheets_key:
-        # Создаем экземпляр менеджера Google Sheets
-        sheets_manager = SheetsManager(
-            creds_path=google_creds_path, 
-            spreadsheet_key=google_sheets_key
-        )
-        
-        # Создаем экземпляр менеджера сессий
-        session_manager = SheetSessionManager(sheets_manager)
-        logger.info("Используется менеджер сессий с Google Sheets")
+    if google_sheets_key and (google_creds_path or google_service_account_json):
+        try:
+            # Импортируем функцию для получения готового экземпляра
+            from sheets_manager import get_sheets_manager
+            
+            # Получаем готовый инициализированный экземпляр
+            sheets_manager = get_sheets_manager()
+            
+            if sheets_manager:
+                # Создаем экземпляр менеджера сессий
+                session_manager = SheetSessionManager(sheets_manager)
+                logger.info("Используется менеджер сессий с Google Sheets")
+            else:
+                # Если sheets_manager не инициализирован, используем словарь в памяти
+                logger.warning("Не удалось инициализировать sheets_manager. Используются сессии в памяти")
+                user_sessions = {}
+        except Exception as e:
+            logger.warning(f"Ошибка при получении экземпляра sheets_manager: {e}. Используются сессии в памяти")
+            user_sessions = {}
     else:
         # Если переменные окружения не настроены, используем словарь в памяти
         logger.warning("GOOGLE_CREDENTIALS_PATH или GOOGLE_SHEETS_KEY не найдены. Используются сессии в памяти")

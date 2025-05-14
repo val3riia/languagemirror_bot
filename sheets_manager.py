@@ -773,9 +773,11 @@ def init_sheets_manager():
     # Проверяем, существуют ли необходимые переменные окружения
     spreadsheet_key = os.environ.get("GOOGLE_SHEETS_KEY")
     credentials_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+    service_account_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
     
-    if not spreadsheet_key or not credentials_path:
-        logger.warning("GOOGLE_SHEETS_KEY или GOOGLE_CREDENTIALS_PATH не найдены в переменных окружения")
+    # Проверяем наличие ключа таблицы и одного из способов аутентификации
+    if not spreadsheet_key or (not credentials_path and not service_account_json):
+        logger.warning("GOOGLE_SHEETS_KEY или способы аутентификации не найдены в переменных окружения")
         return None
     
     # Создаем экземпляр, если еще не создан

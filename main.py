@@ -120,7 +120,7 @@ def init_google_sheets():
                 logger.info("Initializing Google Sheets for data storage")
                 sheets_manager = get_sheets_manager()
                 
-                if sheets_manager and sheets_manager.spreadsheet:
+                if sheets_manager:
                     logger.info("Google Sheets initialized successfully")
                     return True
                 else:
