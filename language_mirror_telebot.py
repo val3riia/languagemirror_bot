@@ -122,38 +122,32 @@ LANGUAGE_LEVELS = {
     "C2": "Proficiency - You can understand virtually everything heard or read"
 }
 
-# Импортируем менеджер сессий с поддержкой базы данных
+# Импортируем менеджер сессий с поддержкой Google Sheets
 try:
-    from db_session_manager import DatabaseSessionManager
-    from flask import Flask
+    from sheets_session_manager import SheetSessionManager
+    from sheets_manager import SheetsManager
     
-    # Создаем Flask приложение для инициализации БД
-    app = Flask(__name__)
+    # Проверяем наличие необходимых переменных окружения
+    google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+    google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY")
     
-    # Получаем URL базы данных
-    database_url = os.environ.get("DATABASE_URL")
-    if database_url:
-        # Исправляем формат URL если необходимо
-        if database_url.startswith("postgres://"):
-            database_url = database_url.replace("postgres://", "postgresql://", 1)
+    if google_creds_path and google_sheets_key:
+        # Создаем экземпляр менеджера Google Sheets
+        sheets_manager = SheetsManager(
+            creds_path=google_creds_path, 
+            spreadsheet_key=google_sheets_key
+        )
         
-        app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-        app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-            "pool_recycle": 300, 
-            "pool_pre_ping": True,
-        }
-        app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-        
-        # Используем сессии с базой данных
-        session_manager = DatabaseSessionManager(app)
-        logger.info("Используется менеджер сессий с базой данных")
+        # Создаем экземпляр менеджера сессий
+        session_manager = SheetSessionManager(sheets_manager)
+        logger.info("Используется менеджер сессий с Google Sheets")
     else:
-        # Используем in-memory сессии если нет URL
-        session_manager = DatabaseSessionManager()
-        logger.warning("URL базы данных не найден. Используются сессии в памяти")
+        # Если переменные окружения не настроены, используем словарь в памяти
+        logger.warning("GOOGLE_CREDENTIALS_PATH или GOOGLE_SHEETS_KEY не найдены. Используются сессии в памяти")
+        user_sessions = {}
         
-except Exception:
-    logger.warning("Ошибка инициализации базы данных. Используются сессии в памяти")
+except Exception as e:
+    logger.warning(f"Ошибка инициализации Google Sheets: {e}. Используются сессии в памяти")
     # Простое хранилище сессий в памяти (для обратной совместимости)
     user_sessions = {}
 
@@ -1231,144 +1225,98 @@ def handle_admin_feedback(message):
     bot.send_message(message.chat.id, "🔄 Получение данных обратной связи...")
     
     try:
-        # Проверяем наличие переменной окружения DATABASE_URL
-        database_url = os.environ.get("DATABASE_URL")
-        if not database_url:
-            error_msg = "❌ Ошибка: переменная окружения DATABASE_URL не найдена"
+        # Проверяем наличие необходимых переменных окружения для Google Sheets
+        google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+        google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY")
+        
+        if not google_creds_path or not google_sheets_key:
+            error_msg = "❌ Ошибка: переменные окружения GOOGLE_CREDENTIALS_PATH или GOOGLE_SHEETS_KEY не найдены"
             logger.error(error_msg)
             bot.send_message(
                 message.chat.id,
-                error_msg + "\n\nВозможно, нужно настроить подключение к базе данных в переменных окружения."
+                error_msg + "\n\nНеобходимо настроить подключение к Google Sheets в переменных окружения."
             )
             
-            # Создаем отчет без подключения к базе
+            # Создаем отчет без подключения к Google Sheets
             create_empty_report(message.chat.id)
             return
         
-        # Импортируем всё, что нужно для доступа к базе данных
-        import os
-        import sys
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        if current_dir not in sys.path:
-            sys.path.append(current_dir)
-        
-        # Отладочное сообщение о директории
-        logger.info(f"🔍 Текущая директория: {current_dir}")
+        # Отладочное сообщение
+        logger.info("🔍 Подключение к Google Sheets...")
         bot.send_message(
             message.chat.id,
-            f"🔍 Текущая директория: {current_dir}"
+            "🔍 Подключение к Google Sheets..."
         )
-            
-        # Импортируем Flask приложение и модели с отладкой
-        try:
-            logger.info("🔍 Пробуем импортировать main...")
-            import main
-            logger.info("✅ Импорт main выполнен успешно!")
-            
-            logger.info("🔍 Пробуем импортировать app из main...")
-            from main import app
-            logger.info("✅ Импорт app из main выполнен успешно!")
-            
-            logger.info("🔍 Пробуем импортировать модели Feedback и User...")
-            from models import Feedback, User
-            logger.info("✅ Импорт моделей выполнен успешно!")
-            
-            bot.send_message(
-                message.chat.id,
-                "✅ Все импорты выполнены успешно!"
-            )
-        except Exception as import_error:
-            error_msg = "❌ Ошибка при импорте модулей"
-            logger.error(error_msg)
-            print(f"Ошибка импорта: {str(import_error)}")
-            # Закомментировано для безопасности на GitHub
-            # import traceback
-            # logger.error(traceback.format_exc())
-            bot.send_message(message.chat.id, error_msg)
-            
-            # Создаем отчет без подключения к базе
-            create_empty_report(message.chat.id)
-            return
-        
-        # Отладочное сообщение 
-        logger.info("🔍 Поиск записей обратной связи в базе данных...")
-        bot.send_message(
-            message.chat.id,
-            "🔍 Поиск записей обратной связи в базе данных..."
-        )
-        
-        # Проверяем Flask app
-        logger.info(f"Атрибуты Flask app: {dir(app)}")
-        logger.info(f"app.config: {app.config}")
         
         # Инициализируем список для записей обратной связи
         feedback_records = []
         
-        # Отладочные переменные для отслеживания прогресса
-        got_context = False
-        got_feedback = False
-        processed_users = False
-        
-        # Первый блок try - работа с базой данных через Flask app.context
+        # Подключаемся к Google Sheets и получаем данные
         try:
-            logger.info("🔍 Создаю контекст Flask app...")
+            # Импортируем модуль для работы с Google Sheets
+            from sheets_manager import SheetsManager
+            from sheets_excel_report import create_temp_excel_for_telegram
             
-            # Открываем контекст Flask app
-            with app.app_context():
-                got_context = True
-                # Отладочное сообщение внутри контекста
-                logger.info("✅ Контекст Flask app создан успешно!")
-                bot.send_message(message.chat.id, "✅ Контекст Flask app создан!")
-                
-                # Проверяем наличие таблицы Feedback
-                logger.info("🔍 Проверяем таблицу Feedback...")
-                all_feedback = Feedback.query.order_by(Feedback.timestamp.desc()).all()
-                got_feedback = True
-                logger.info(f"📊 Найдено {len(all_feedback)} записей обратной связи")
-                bot.send_message(message.chat.id, f"📊 Найдено {len(all_feedback)} записей обратной связи")
-                
-                # Добавляем информацию о пользователе для каждой записи
-                for fb in all_feedback:
-                    user = User.query.get(fb.user_id)
-                    if user:
-                        feedback_records.append((
-                            fb, 
-                            user.telegram_id,
-                            user.username,
-                            user.first_name,
-                            user.last_name
-                        ))
-                    else:
-                        # Если пользователь не найден, используем заглушки
-                        feedback_records.append((
-                            fb, 
-                            0,
-                            "unknown",
-                            "Unknown",
-                            "User"
-                        ))
-                
-                processed_users = True
-                        
-            # Теперь мы вышли из контекста Flask app
-            logger.info(f"Вышли из контекста Flask app, получили {len(feedback_records)} записей обратной связи")
+            # Создаем экземпляр менеджера Google Sheets
+            sheets_manager = SheetsManager(
+                creds_path=google_creds_path, 
+                spreadsheet_key=google_sheets_key
+            )
             
-        except Exception as context_error:
-            error_msg = "❌ Ошибка при работе с контекстом Flask app"
-            logger.error(error_msg)
-            # Закомментировано для безопасности на GitHub
-            # import traceback
-            # logger.error(traceback.format_exc())
+            # Получаем данные обратной связи
+            feedback_data = sheets_manager.get_all_feedback()
             
-            # Добавляем больше контекста об ошибке
-            debug_msg = f"Прогресс выполнения: context={got_context}, feedback={got_feedback}, users={processed_users}"
-            logger.error(debug_msg)
+            logger.info(f"📊 Найдено {len(feedback_data)} записей обратной связи")
+            bot.send_message(
+                message.chat.id, 
+                f"📊 Найдено {len(feedback_data)} записей обратной связи"
+            )
+            
+            # Формируем структуру, аналогичную той, что была при работе с PostgreSQL
+            # для совместимости с кодом отчета
+            for feedback in feedback_data:
+                # Получаем информацию о пользователе
+                user_id = feedback.get('user_id')
+                timestamp = feedback.get('timestamp', datetime.now())
+                rating = feedback.get('rating')
+                comment = feedback.get('comment', '')
+                
+                # Создаем аналог записи Feedback для совместимости
+                fb = type('Feedback', (), {
+                    'rating': rating,
+                    'comment': comment,
+                    'timestamp': timestamp,
+                    'user_id': user_id
+                })
+                
+                # Получаем данные пользователя
+                telegram_id = feedback.get('telegram_id', 0)
+                username = feedback.get('username', 'unknown')
+                first_name = feedback.get('first_name', 'Unknown')
+                last_name = feedback.get('last_name', 'User')
+                
+                # Добавляем запись в список
+                feedback_records.append((
+                    fb,
+                    telegram_id,
+                    username,
+                    first_name,
+                    last_name
+                ))
+                
+            # Отладочное сообщение
+            logger.info(f"Получено и обработано {len(feedback_records)} записей обратной связи из Google Sheets")
+            
+        except Exception as sheets_error:
+            error_msg = "❌ Ошибка при получении данных из Google Sheets"
+            logger.error(f"{error_msg}: {str(sheets_error)}")
             
             # Сообщаем об ошибке пользователю
             bot.send_message(message.chat.id, error_msg)
-            bot.send_message(message.chat.id, debug_msg)
+            bot.send_message(message.chat.id, f"Детали ошибки: {str(sheets_error)}")
             
-            # Не перебрасываем исключение, а обрабатываем в этом блоке
+            # Создаем отчет без подключения
+            create_empty_report(message.chat.id)
             return
         
         # Второй блок try - обработка полученных данных и формирование отчета
@@ -1451,31 +1399,37 @@ def handle_admin_feedback(message):
             
             # Третий блок try - создание и отправка Excel файла
             try:
-                # Импортируем модуль для создания отчета
-                from excel_report import create_simple_feedback_excel
+                # Проверяем, импортировали ли мы уже этот модуль
+                if 'create_temp_excel_for_telegram' not in locals():
+                    # Импортируем модуль для создания отчета
+                    from sheets_excel_report import create_temp_excel_for_telegram
                 
-                # Генерируем файл отчета
-                excel_path = create_simple_feedback_excel(feedback_records)
+                # Генерируем файл отчета через Google Sheets
+                excel_path, filename = create_temp_excel_for_telegram(sheets_manager)
                 
                 # Отправляем файл
                 with open(excel_path, 'rb') as excel_file:
                     bot.send_document(
                         message.chat.id,
                         excel_file,
-                        caption="📊 Полный отчет по обратной связи в Excel"
+                        caption="📊 Полный отчет по обратной связи из Google Sheets"
                     )
                 
-                logger.info(f"Excel-отчет успешно отправлен: {excel_path}")
+                # Удаляем временный файл после отправки
+                try:
+                    os.remove(excel_path)
+                    logger.info(f"Временный Excel-файл удален: {excel_path}")
+                except Exception as e:
+                    logger.warning(f"Не удалось удалить временный файл: {str(e)}")
+                
+                logger.info(f"Excel-отчет успешно отправлен: {filename}")
                 
             except Exception as excel_error:
-                logger.error("Ошибка при создании Excel-отчета")
-                # Закомментировано для безопасности на GitHub
-                # import traceback
-                # logger.error(traceback.format_exc())
+                logger.error(f"Ошибка при создании Excel-отчета: {str(excel_error)}")
                 
                 bot.send_message(
                     message.chat.id,
-                    "❌ Не удалось создать Excel-отчет. Проверьте журнал для деталей."
+                    f"❌ Не удалось создать Excel-отчет: {str(excel_error)}"
                 )
                 
             # Отладочное сообщение для проверки, что мы дошли до этого места
