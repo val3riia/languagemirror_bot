@@ -104,12 +104,13 @@ def init_google_sheets():
         # Проверяем наличие переменных окружения для Google Sheets
         google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
         google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY")
+        google_service_account_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
         use_google_sheets = os.environ.get("USE_GOOGLE_SHEETS", "True").lower() == "true"
         
-        if use_google_sheets and google_creds_path and google_sheets_key:
+        if use_google_sheets and google_sheets_key and (google_service_account_json or (google_creds_path and os.path.exists(google_creds_path))):
             try:
-                # Проверяем, что файл учетных данных существует
-                if not os.path.exists(google_creds_path):
+                # Если используется путь к файлу учетных данных, проверяем, что файл существует
+                if google_creds_path and not os.path.exists(google_creds_path) and not google_service_account_json:
                     logger.error(f"Google Sheets credentials file not found: {google_creds_path}")
                     return False
                 

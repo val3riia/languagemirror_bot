@@ -82,10 +82,35 @@ class SheetsManager:
     def _authenticate(self):
         """Аутентификация с помощью учетных данных сервисного аккаунта"""
         try:
-            credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                self.credentials_path, SHEETS_API_SCOPES
-            )
-            self.client = gspread.authorize(credentials)
+            # Проверяем наличие переменной окружения с JSON данными
+            google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+            
+            if google_creds_json:
+                # Используем JSON из переменной окружения
+                import json
+                from tempfile import NamedTemporaryFile
+                
+                # Создаем временный файл для хранения учетных данных
+                with NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp:
+                    temp.write(google_creds_json)
+                    temp_creds_path = temp.name
+                
+                try:
+                    # Используем временный файл для создания учетных данных
+                    credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                        temp_creds_path, SHEETS_API_SCOPES
+                    )
+                    self.client = gspread.authorize(credentials)
+                finally:
+                    # Удаляем временный файл
+                    if os.path.exists(temp_creds_path):
+                        os.unlink(temp_creds_path)
+            else:
+                # Используем файл, если переменная окружения не найдена
+                credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                    self.credentials_path, SHEETS_API_SCOPES
+                )
+                self.client = gspread.authorize(credentials)
         except Exception as e:
             logger.error(f"Ошибка аутентификации в Google Sheets API: {e}")
             raise
