@@ -60,11 +60,14 @@ class SheetsManager:
             logger.warning("GOOGLE_SHEETS_KEY не задан в переменных окружения")
             return
 
-        if not self.credentials_path:
-            logger.warning("GOOGLE_CREDENTIALS_PATH не задан в переменных окружения")
+        # Проверяем наличие либо GOOGLE_SERVICE_ACCOUNT_JSON, либо файла учетных данных
+        google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+        if not google_creds_json and not self.credentials_path:
+            logger.warning("Ни GOOGLE_SERVICE_ACCOUNT_JSON, ни GOOGLE_CREDENTIALS_PATH не заданы в переменных окружения")
             return
-
-        if not os.path.exists(self.credentials_path):
+            
+        # Проверяем наличие файла учетных данных только если используется путь и отсутствует JSON
+        if not google_creds_json and self.credentials_path and not os.path.exists(self.credentials_path):
             logger.warning(
                 f"Файл с учетными данными сервисного аккаунта не найден: {self.credentials_path}"
             )
@@ -96,25 +99,48 @@ class SheetsManager:
                 
                 logger.info("Используем аутентификацию из GOOGLE_SERVICE_ACCOUNT_JSON")
                 
-                # Создаем временный файл для хранения учетных данных
-                with NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp:
-                    temp.write(google_creds_json)
-                    temp_creds_path = temp.name
-                    logger.info(f"Временный файл учетных данных создан: {temp_creds_path}")
+                # Проверяем, может ли google_creds_json уже быть JSON объектом
+                try:
+                    # Пробуем парсить как JSON объект
+                    import json
+                    json_obj = json.loads(google_creds_json)
+                    google_creds_json = json.dumps(json_obj)
+                    logger.info("JSON ключа сервисного аккаунта успешно разобран")
+                except json.JSONDecodeError:
+                    # Не является валидным JSON, возможно, это закодированная строка
+                    logger.warning("Переменная среды GOOGLE_SERVICE_ACCOUNT_JSON не является валидным JSON")
+                    google_creds_json = ""
+                    # Попытаемся распечатать первые несколько символов для отладки
+                    if len(google_creds_json) > 0:
+                        logger.debug(f"Первые 10 символов: {google_creds_json[:10]}...")
+                
+                # Создаем временный файл для хранения учетных данных, только если у нас есть валидный JSON
+                if google_creds_json:
+                    with NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp:
+                        temp.write(google_creds_json)
+                        temp_creds_path = temp.name
+                        logger.info(f"Временный файл учетных данных создан: {temp_creds_path}")
+                else:
+                    logger.error("Не удалось создать временный файл учетных данных, так как JSON невалиден")
+                    temp_creds_path = None
                 
                 try:
-                    # Используем временный файл для создания учетных данных
-                    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                        temp_creds_path, SHEETS_API_SCOPES
-                    )
-                    self.client = gspread.authorize(credentials)
-                    logger.info("Аутентификация через GOOGLE_SERVICE_ACCOUNT_JSON успешна")
+                    if temp_creds_path and os.path.exists(temp_creds_path):
+                        # Используем временный файл для создания учетных данных
+                        credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                            temp_creds_path, SHEETS_API_SCOPES
+                        )
+                        self.client = gspread.authorize(credentials)
+                        logger.info("Аутентификация через GOOGLE_SERVICE_ACCOUNT_JSON успешна")
+                    else:
+                        logger.error("Невозможно создать учетные данные, временный файл не существует")
+                        raise Exception("Ошибка создания временного файла учетных данных")
                 except Exception as e:
                     logger.error(f"Ошибка аутентификации через GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
                     raise
                 finally:
                     # Удаляем временный файл
-                    if os.path.exists(temp_creds_path):
+                    if temp_creds_path and os.path.exists(temp_creds_path):
                         os.unlink(temp_creds_path)
                         logger.info("Временный файл учетных данных удален")
             else:
