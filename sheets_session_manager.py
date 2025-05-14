@@ -2,20 +2,17 @@
 Менеджер сессий на основе Google Sheets для Language Mirror бота.
 Эта реализация заменяет DatabaseSessionManager и использует Google Sheets вместо PostgreSQL.
 """
-import time
+
 import logging
-from typing import Dict, List, Any, Optional
+import time
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Union
 
 from sheets_manager import SheetsManager
 
 # Настройка логирования
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-handler = logging.StreamHandler()
-formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-handler.setFormatter(formatter)
-logger.addHandler(handler)
-logger.setLevel(logging.INFO)
 
 class SheetSessionManager:
     """
@@ -31,9 +28,9 @@ class SheetSessionManager:
             sheets_manager: Менеджер для работы с Google Sheets
             session_timeout: Таймаут сессии в секундах (по умолчанию 30 минут)
         """
-        self.sheets_manager = sheets_manager or SheetsManager()
+        self.sheets_manager = sheets_manager
         self.session_timeout = session_timeout
-        self.in_memory_sessions = {}  # Для резервного хранения в памяти
+        logger.info(f"SheetSessionManager initialized with timeout {session_timeout} seconds")
     
     def create_session(self, user_id: int, initial_data: Optional[Dict[str, Any]] = None) -> None:
         """
@@ -43,42 +40,26 @@ class SheetSessionManager:
             user_id: Telegram ID пользователя
             initial_data: Начальные данные сессии (может включать language_level и др.)
         """
-        try:
-            # Всегда поддерживаем копию в памяти для резервного использования
-            self.in_memory_sessions[user_id] = {
-                "created_at": time.time(),
-                "last_updated": time.time(),
-                "messages": [],
-                **(initial_data or {})
-            }
+        if not self.sheets_manager:
+            logger.warning(f"Cannot create session for user {user_id}: sheets_manager not initialized")
+            return
             
-            # Извлекаем данные пользователя из initial_data
-            username = initial_data.get("username") if initial_data else None
-            first_name = initial_data.get("first_name") if initial_data else None
-            last_name = initial_data.get("last_name") if initial_data else None
-            
-            # Получаем или создаем пользователя
-            user_data = self.sheets_manager.get_or_create_user(
-                telegram_id=user_id,
-                username=username,
-                first_name=first_name,
-                last_name=last_name
-            )
-            
-            # Обновляем уровень языка, если он указан
-            if initial_data and "language_level" in initial_data:
-                self.sheets_manager.update_language_level(user_id, initial_data["language_level"])
-            
-            # Создаем сессию
-            session_data = self.sheets_manager.create_session(user_id)
-            
-            # Сохраняем ID сессии в памяти
-            self.in_memory_sessions[user_id]["sheet_session_id"] = session_data["id"]
-            
-            logger.info(f"Создана новая сессия для пользователя {user_id}")
-            
-        except Exception as e:
-            logger.error(f"Ошибка при создании сессии для пользователя {user_id}: {e}")
+        # Получаем или создаем пользователя
+        language_level = None
+        topic = None
+        
+        if initial_data:
+            language_level = initial_data.get("language_level")
+            topic = initial_data.get("topic")
+        
+        # Создаем новую сессию
+        self.sheets_manager.create_session(
+            telegram_id=user_id,
+            language_level=language_level,
+            topic=topic
+        )
+        
+        logger.info(f"Created new session for user {user_id}")
     
     def get_session(self, user_id: int) -> Optional[Dict[str, Any]]:
         """
@@ -90,31 +71,38 @@ class SheetSessionManager:
         Returns:
             Данные сессии или None, если сессия не найдена/истекла
         """
-        # Сначала проверяем данные в памяти
-        in_memory_session = self.in_memory_sessions.get(user_id)
-        
-        if not in_memory_session:
+        if not self.sheets_manager:
+            logger.warning(f"Cannot get session for user {user_id}: sheets_manager not initialized")
             return None
+            
+        # Получаем активную сессию
+        session = self.sheets_manager.get_active_session(user_id)
         
+        if not session:
+            logger.info(f"No active session found for user {user_id}")
+            return None
+            
         # Проверяем, не истекла ли сессия
-        if time.time() - in_memory_session["last_updated"] > self.session_timeout:
-            self.end_session(user_id)
-            return None
+        if "last_active" in session:
+            try:
+                last_active_str = session["last_active"]
+                last_active = datetime.fromisoformat(last_active_str)
+                now = datetime.now()
+                
+                # Рассчитываем разницу во времени в секундах
+                delta = (now - last_active).total_seconds()
+                
+                if delta > self.session_timeout:
+                    logger.info(f"Session for user {user_id} expired ({delta} seconds old)")
+                    self.end_session(user_id)
+                    return None
+            except Exception as e:
+                logger.error(f"Error checking session timeout for user {user_id}: {e}")
         
-        # Обновляем последнее время активности в памяти
-        in_memory_session["last_updated"] = time.time()
+        # Дополняем сессию данными из таблицы сообщений
+        session["messages"] = self.get_messages(user_id)
         
-        # Проверяем, есть ли активная сессия в таблице
-        active_session = self.sheets_manager.get_active_session(user_id)
-        
-        # Если нет активной сессии в таблице, но есть в памяти, повторно создаем
-        if not active_session and "sheet_session_id" in in_memory_session:
-            # Создаем новую сессию в таблице
-            session_data = self.sheets_manager.create_session(user_id)
-            # Обновляем ID сессии в памяти
-            in_memory_session["sheet_session_id"] = session_data["id"]
-        
-        return in_memory_session
+        return session
     
     def update_session(self, user_id: int, data: Dict[str, Any]) -> None:
         """
@@ -124,15 +112,26 @@ class SheetSessionManager:
             user_id: Telegram ID пользователя
             data: Новые данные сессии для объединения
         """
-        session = self.get_session(user_id)
-        if session:
-            # Обновляем данные в памяти
-            session.update(data)
-            session["last_updated"] = time.time()
+        if not self.sheets_manager:
+            logger.warning(f"Cannot update session for user {user_id}: sheets_manager not initialized")
+            return
             
-            # Обновляем уровень языка, если он указан
-            if "language_level" in data:
-                self.sheets_manager.update_language_level(user_id, data["language_level"])
+        # Получаем активную сессию
+        session = self.sheets_manager.get_active_session(user_id)
+        
+        if not session:
+            logger.info(f"No active session found for user {user_id} to update, creating new session")
+            self.create_session(user_id, data)
+            return
+            
+        # Обновляем данные сессии
+        session_id = session.get("id")
+        
+        # Удаляем из данных поле messages, чтобы не сохранять его в основной таблице сессий
+        updated_data = {k: v for k, v in data.items() if k != "messages"}
+        
+        self.sheets_manager.update_session(session_id, updated_data)
+        logger.info(f"Updated session for user {user_id}")
     
     def end_session(self, user_id: int) -> None:
         """
@@ -141,17 +140,21 @@ class SheetSessionManager:
         Args:
             user_id: Telegram ID пользователя
         """
-        # Проверяем хранилище в памяти
-        if user_id in self.in_memory_sessions:
-            session = self.in_memory_sessions[user_id]
+        if not self.sheets_manager:
+            logger.warning(f"Cannot end session for user {user_id}: sheets_manager not initialized")
+            return
             
-            # Завершаем сессию в таблице
-            self.sheets_manager.end_session(user_id)
+        # Получаем активную сессию
+        session = self.sheets_manager.get_active_session(user_id)
+        
+        if not session:
+            logger.info(f"No active session found for user {user_id} to end")
+            return
             
-            # Удаляем из памяти
-            del self.in_memory_sessions[user_id]
-            
-            logger.info(f"Завершена сессия пользователя {user_id}")
+        # Завершаем сессию
+        session_id = session.get("id")
+        self.sheets_manager.end_session(session_id)
+        logger.info(f"Ended session for user {user_id}")
     
     def add_message_to_session(self, user_id: int, role: str, content: str) -> None:
         """
@@ -162,21 +165,32 @@ class SheetSessionManager:
             role: Роль сообщения ('user' или 'assistant')
             content: Содержимое сообщения
         """
-        session = self.get_session(user_id)
-        if session:
-            # Добавляем в память
-            if "messages" not in session:
-                session["messages"] = []
+        if not self.sheets_manager:
+            logger.warning(f"Cannot add message for user {user_id}: sheets_manager not initialized")
+            return
             
-            session["messages"].append({
-                "role": role,
-                "content": content,
-                "timestamp": time.time()
-            })
-            session["last_updated"] = time.time()
+        # Получаем активную сессию
+        session = self.sheets_manager.get_active_session(user_id)
+        
+        if not session:
+            logger.info(f"No active session found for user {user_id}, creating new session")
+            self.create_session(user_id)
+            session = self.sheets_manager.get_active_session(user_id)
             
-            # Добавляем в таблицу
-            self.sheets_manager.add_message(user_id, role, content)
+            if not session:
+                logger.error(f"Failed to create session for user {user_id}")
+                return
+        
+        # Добавляем сообщение к сессии
+        session_id = session.get("id")
+        self.sheets_manager.add_message(
+            telegram_id=user_id,
+            role=role,
+            content=content,
+            session_id=session_id
+        )
+        
+        logger.info(f"Added message from {role} to session for user {user_id}")
     
     def get_messages(self, user_id: int) -> List[Dict[str, str]]:
         """
@@ -188,23 +202,24 @@ class SheetSessionManager:
         Returns:
             Список словарей сообщений
         """
-        session = self.get_session(user_id)
-        if not session or "messages" not in session:
+        if not self.sheets_manager:
+            logger.warning(f"Cannot get messages for user {user_id}: sheets_manager not initialized")
             return []
+            
+        # Получаем активную сессию
+        session = self.sheets_manager.get_active_session(user_id)
         
-        # Форматируем сообщения для модели ИИ (только роль и содержимое)
-        return [
-            {"role": msg["role"], "content": msg["content"]}
-            for msg in session["messages"]
-        ]
+        if not session:
+            logger.info(f"No active session found for user {user_id}")
+            return []
+            
+        # Получаем сообщения сессии
+        session_id = session.get("id")
+        messages = self.sheets_manager.get_session_messages(session_id)
+        
+        return messages
     
     def clean_expired_sessions(self) -> None:
         """Очищает истекшие сессии в памяти."""
-        current_time = time.time()
-        expired_user_ids = [
-            user_id for user_id, session in self.in_memory_sessions.items()
-            if current_time - session["last_updated"] > self.session_timeout
-        ]
-        
-        for user_id in expired_user_ids:
-            self.end_session(user_id)
+        # В данной реализации не требуется, так как сессии хранятся в Google Sheets
+        logger.info("Clean expired sessions called (no action needed for Google Sheets implementation)")

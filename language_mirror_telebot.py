@@ -593,22 +593,19 @@ def handle_feedback_bonus(call):
         return
     
     # Пользователь хочет получить бонус
-    # Обновляем информацию о пользователе в базе данных
-    from models import db, User
-    from main import app
-    user_record = None
+    bonus_available = False
     
-    # Создаем контекст приложения Flask
-    with app.app_context():
-        user_record = User.query.filter_by(telegram_id=user_id).first()
+    # Проверяем, доступен ли Google Sheets
+    if 'sheets_manager' in globals() and sheets_manager:
+        # Проверяем, есть ли у пользователя доступный бонус
+        bonus_available = not sheets_manager.has_user_used_feedback_bonus(user_id)
         
-        if user_record and not user_record.feedback_bonus_used:
+        if bonus_available:
             # Обновляем флаг использования бонуса
-            user_record.feedback_bonus_used = True
-            db.session.commit()
+            sheets_manager.set_feedback_bonus_used(user_id, True)
             
-    # Показываем клавиатуру выбора уровня языка, выносим это за контекст приложения
-    if user_record:
+    # Показываем клавиатуру выбора уровня языка
+    if bonus_available:
         markup = types.InlineKeyboardMarkup()
         for level, description in LANGUAGE_LEVELS.items():
             markup.add(types.InlineKeyboardButton(
@@ -729,48 +726,50 @@ def handle_feedback_comment(message):
         first_name = message.from_user.first_name or ""
         last_name = message.from_user.last_name or ""
         
-        # Также сохраняем обратную связь напрямую в БД через SQLAlchemy
-        from models import db, User, Feedback
-        from main import app
-        
-        # Выполняем в отдельном потоке, чтобы не блокировать бота
-        def save_to_db():
-            with app.app_context():
-                # Ищем пользователя по id
-                user = User.query.filter_by(telegram_id=user_id).first()
-                
-                if user:
-                    # Создаем запись обратной связи
-                    new_feedback = Feedback(
-                        user_id=user.id,
+        # Сохраняем обратную связь в Google Sheets
+        if 'sheets_manager' in globals() and sheets_manager:
+            # Выполняем в отдельном потоке, чтобы не блокировать бота
+            def save_to_sheets():
+                try:
+                    # Добавляем запись обратной связи в Google Sheets
+                    sheets_manager.add_feedback(
+                        telegram_id=user_id,
                         rating=feedback_type,
-                        comment=comment
+                        comment=comment,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name
                     )
-                    db.session.add(new_feedback)
-                    db.session.commit()
                     
-                    # Проверяем, содержит ли комментарий минимум 3 слова для предоставления бонуса
+                    # Проверяем, содержит ли комментарий минимум слов для предоставления бонуса
                     words = comment.split()
-                    if len(words) >= 3:
+                    if len(words) >= min_words_for_bonus:
                         # Обновляем статус обратной связи пользователя, предоставляя бонус
-                        user.feedback_bonus_used = False  # Разрешаем использовать бонусный запрос
-                        db.session.commit()
+                        sheets_manager.set_feedback_bonus_used(user_id, False)  # Разрешаем использовать бонусный запрос
                         
                         # Отправляем уведомление о бонусном запросе
                         bot.send_message(
-                            user.telegram_id,
+                            user_id,
                             "🎁 Thank you for your detailed feedback! You've received a bonus article request. "
                             "Use /discussion to use it anytime today!"
                         )
+                        return True
                     else:
                         bot.send_message(
-                            user.telegram_id,
+                            user_id,
                             "Thank you for your feedback! For more detailed comments (at least 3 words) "
                             "you can receive bonus article requests in the future."
                         )
-        
-        # Запускаем сохранение в отдельном потоке
-        threading.Thread(target=save_to_db, daemon=True).start()
+                        return False
+                except Exception as e:
+                    logger.error(f"Ошибка при сохранении обратной связи в Google Sheets: {str(e)}")
+                    return False
+            
+            # Запускаем функцию сохранения в отдельном потоке
+            threading.Thread(target=save_to_sheets, daemon=True).start()
+        else:
+            # Если Google Sheets недоступен, сохраняем только в логи
+            logger.warning(f"Google Sheets недоступен, обратная связь только логируется: {user_id}, {feedback_type}, {comment}")
     except Exception as e:
         logger.error("Error saving feedback to database")
     
