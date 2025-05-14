@@ -369,135 +369,94 @@ def handle_start(message):
 def handle_discussion(message):
     """Обрабатывает команду /discussion."""
     user_id = message.from_user.id
+    chat_id = message.chat.id
+    username = message.from_user.username if hasattr(message.from_user, 'username') else ""
     
-    # Определяем, какую систему хранения сессий использовать
-    if 'session_manager' in globals():
-        # Проверяем, есть ли у пользователя активная сессия через менеджер
-        session = session_manager.get_session(user_id)
-        if session:
-            bot.send_message(
-                message.chat.id,
-                "You're already in a discussion with me. You can continue talking or "
-                "use /stop_discussion to end our current conversation."
-            )
-            return
+    logger.info(f"Обработка команды /discussion от пользователя {username} (ID: {user_id})")
+    
+    # Проверяем, есть ли у пользователя активная сессия
+    active_session = False
+    
+    if session_manager:
+        # Используем Google Sheets через session_manager
+        try:
+            session = session_manager.get_session(user_id)
+            if session:
+                active_session = True
+                bot.send_message(
+                    chat_id,
+                    "Вы уже ведете обсуждение со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
+                )
+                logger.info(f"Пользователь {username} (ID: {user_id}) уже имеет активную сессию")
+                return
+        except Exception as e:
+            logger.error(f"Ошибка при проверке сессии: {str(e)}")
     else:
-        # Используем старую систему хранения в памяти
+        # Используем локальное хранилище
         if user_id in user_sessions:
+            active_session = True
             bot.send_message(
-                message.chat.id,
-                "You're already in a discussion with me. You can continue talking or "
-                "use /stop_discussion to end our current conversation."
+                chat_id,
+                "Вы уже ведете обсуждение со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
             )
             return
     
-    # Проверяем лимит на количество запросов в день
-    from datetime import date
-    today = date.today()
-    
-    # Ищем пользователя в базе данных
-    from models import db, User
-    from main import app
-    user_record = None
-    
-    # Создаем контекст приложения Flask
-    with app.app_context():
-        user_record = User.query.filter_by(telegram_id=user_id).first()
+    # Если сессия не активна, проверяем лимиты на использование
+    if not active_session:
+        # Проверяем лимит на количество запросов в день
+        from datetime import date
+        today = date.today()
         
-        if not user_record:
-            # Создаем новую запись пользователя, если его нет в базе
-            user_record = User(
-                telegram_id=user_id,
-                username=message.from_user.username,
-                first_name=message.from_user.first_name,
-                last_name=message.from_user.last_name
-            )
-            db.session.add(user_record)
-            db.session.commit()
-            
-            # Пользователь новый, продолжаем без ограничений
-            pass
-        elif user_record.last_discussion_date == today:
-            # Проверяем, является ли пользователь администратором
-            username = message.from_user.username if hasattr(message.from_user, 'username') else None
-            
-            # Расширенная проверка на имя пользователя и ID администратора
-            is_admin = False
-            
-            # Сначала проверяем наличие пользователя
-            if not username:
-                username = ""  # Для безопасного логирования
-                logger.info(f"У пользователя нет имени пользователя, используется только ID: {user_id}")
-            
-            # Проверяем все возможные варианты
-            # 1. Проверка по точному совпадению имени и ID
-            if username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == user_id:
-                is_admin = True
-                logger.info(f"Пользователь {username} успешно авторизован как администратор (точное совпадение)")
-            
-            # 2. Проверка только по имени, если ID указан как 0 (любой ID)
-            elif username.lower() in ADMIN_USERS and ADMIN_USERS.get(username.lower()) == 0:
-                is_admin = True
-                logger.info(f"Пользователь {username} успешно авторизован как администратор (только по имени)")
-            
-            # 3. Проверка только по ID, если имя указано как пустая строка (любое имя)
-            elif "" in ADMIN_USERS and ADMIN_USERS.get("") == user_id:
-                is_admin = True
-                logger.info(f"Пользователь {username} (ID: {user_id}) успешно авторизован как администратор (только по ID)")
-            
-            # 4. Прямая проверка в словаре для других случаев
-            for admin_name, admin_id in ADMIN_USERS.items():
-                if admin_name and username and admin_name.lower() == username.lower():
-                    is_admin = True
-                    logger.info(f"Пользователь {username} успешно авторизован как администратор (по имени)")
-                    break
-                elif admin_id and admin_id == user_id:
-                    is_admin = True
-                    logger.info(f"Пользователь (ID: {user_id}) успешно авторизован как администратор (по ID)")
-                    break
-            
-            # В отладочном режиме всегда разрешаем доступ
-            if DEBUG_MODE:
-                debug_admin_id = int(os.environ.get("DEBUG_ADMIN_ID", "0"))
-                if debug_admin_id and user_id == debug_admin_id:
-                    is_admin = True
-                    logger.info(f"Пользователь (ID: {user_id}) авторизован как администратор в режиме отладки")
-            
-            # Для администратора не действуют ограничения
-            if is_admin:
-                logger.info(f"Администратор {username} (ID: {user_id}) получил безлимитный доступ")
-                # Продолжаем выполнение без ограничений
-                pass
-            # Для обычных пользователей проверяем лимиты
-            elif not user_record.feedback_bonus_used:
-                # Предлагаем бонус-запрос за фидбек, если пользователь его еще не получал
-                markup = types.InlineKeyboardMarkup()
-                markup.add(
-                    types.InlineKeyboardButton("👍 Get Bonus Request", callback_data="feedback_bonus"),
-                    types.InlineKeyboardButton("❌ No Thanks", callback_data="feedback_skip")
-                )
+        # Проверка на администратора (им доступно неограниченное количество запросов)
+        is_admin = False
+        
+        # Проверяем все возможные варианты
+        if username and username.lower() in ADMIN_USERS:
+            is_admin = True
+            logger.info(f"Пользователь {username} (ID: {user_id}) авторизован как администратор")
+        elif str(user_id) in ADMIN_USERS.values():
+            is_admin = True
+            logger.info(f"Пользователь с ID {user_id} авторизован как администратор")
+        
+        # Проверяем лимиты только для не-администраторов
+        if not is_admin and session_manager and session_manager.sheets_manager:
+            try:
+                # Проверяем данные пользователя
+                user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
                 
-                bot.send_message(
-                    message.chat.id,
-                    "You've already used your article recommendation today!\n\n"
-                    "Would you like to get a bonus request by providing feedback about our bot?",
-                    reply_markup=markup
-                )
-                return
-            else:
-                # Пользователь уже использовал дневной лимит и бонус
-                bot.send_message(
-                    message.chat.id,
-                    "You've already used your article recommendation today! Come back tomorrow for more inspiring content."
-                )
-                return
-        
-        # Если пользователь здесь, значит либо у него нет ограничений, либо он новый
-        # Обновляем дату последнего запроса и увеличиваем счетчик
-        if user_record:
-            user_record.last_discussion_date = today
-            user_record.discussions_count = (user_record.discussions_count or 0) + 1
-            db.session.commit()
+                if user_data:
+                    # Проверяем дату последнего обсуждения
+                    if user_data.get('last_discussion_date') == str(today):
+                        if user_data.get('discussions_count', 0) >= 3:
+                            bot.send_message(
+                                chat_id,
+                                "Вы достигли лимита запросов на сегодня. Попробуйте завтра или оставьте обратную связь с помощью /feedback, чтобы получить бонусные запросы."
+                            )
+                            logger.info(f"Пользователь {username} (ID: {user_id}) достиг лимита запросов")
+                            return
+                else:
+                    # Создаем нового пользователя
+                    session_manager.sheets_manager.create_user(
+                        telegram_id=user_id,
+                        username=username or '',
+                        first_name=message.from_user.first_name or '',
+                        last_name=message.from_user.last_name or ''
+                    )
+                    logger.info(f"Создан новый пользователь: {username} (ID: {user_id})")
+            except Exception as e:
+                logger.error(f"Ошибка при проверке данных пользователя: {str(e)}")
+                # В случае ошибки разрешаем доступ
+                pass
+    
+    # Словарь уровней владения языком
+    LANGUAGE_LEVELS = {
+        'A1': 'Beginner',
+        'A2': 'Elementary',
+        'B1': 'Intermediate',
+        'B2': 'Upper Intermediate',
+        'C1': 'Advanced',
+        'C2': 'Proficient'
+    }
     
     # Создаем клавиатуру для выбора уровня языка
     markup = types.InlineKeyboardMarkup()
