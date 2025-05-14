@@ -19,77 +19,16 @@ from models import db, User, Session, Message, Feedback
 # Create Flask app
 app = Flask(__name__, static_url_path='/static', static_folder='static')
 
-# Configure database
-# Используем URL базы данных из переменных окружения
-database_url = os.environ.get("DATABASE_URL")
-if database_url:
-    # Маскируем пароль для логов (например postgresql://user:pass@host:port/dbname)
-    masked_url = database_url
-    if "@" in database_url:
-        parts = database_url.split("@")
-        user_pass = parts[0].split("://")[1]
-        if ":" in user_pass:
-            # Заменяем пароль на ***
-            user = user_pass.split(":")[0]
-            masked_url = database_url.replace(user_pass, f"{user}:***")
-        
-    logger.info(f"Используется база данных: {masked_url}")
-    
-    # Fix potential postgres:// vs postgresql:// URLs
-    if database_url.startswith("postgres://"):
-        database_url = database_url.replace("postgres://", "postgresql://", 1)
-        logger.info("URL базы данных преобразован из postgres:// в postgresql://")
-        
-    app.config["SQLALCHEMY_DATABASE_URI"] = database_url
-    # Конфигурация для PostgreSQL с минимальными настройками
-    app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
-        "pool_recycle": 300,
-        "pool_pre_ping": True,
-        # Настройки для Render.com PostgreSQL
-        "connect_args": {
-            "sslmode": "require",  # Render.com требует SSL
-            "connect_timeout": 30,  # Увеличиваем таймаут подключения
-            "keepalives": 1,        # Держим соединение активным
-            "keepalives_idle": 30,  # Проверка активности каждые 30 секунд
-            "keepalives_interval": 10  # Интервал повторной проверки 10 секунд
-        }
-    }
-    app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-    # Добавляем детальное логирование SQL-запросов при отладке
-    app.config["SQLALCHEMY_ECHO"] = os.environ.get("DEBUG", "False").lower() in ["true", "1", "yes"]
-    
-    # Initialize database with app
-    db.init_app(app)
-    
-    # Create database tables
-    with app.app_context():
-        try:
-            db.create_all()
-            logger.info("Database tables created successfully")
-        except Exception as e:
-            logger.error(f"Error creating database tables: {str(e)}")
-            logger.error("Check your DATABASE_URL. Правильный формат: postgresql://username:password@hostname:port/database_name")
-            # Проверка основных атрибутов подключения
-            try:
-                import sqlalchemy
-                engine = sqlalchemy.create_engine(
-                    database_url,
-                    connect_args={
-                        "sslmode": "require",
-                        "connect_timeout": 30
-                    }
-                )
-                connection = engine.connect()
-                connection.close()
-                logger.info("Проверка подключения к базе данных прошла успешно!")
-            except Exception as conn_error:
-                logger.error(f"Не удалось подключиться к базе данных: {str(conn_error)}")
-                logger.error("Проверьте также, что ваша база данных доступна из интернета и не заблокирована файрволом.")
-                # Попробуем проверить внутренний URL
-                if "internal" not in database_url and "private" not in database_url:
-                    logger.warning("Возможно, вы используете внешний URL базы данных. В Render.com лучше использовать внутренний URL (Internal Database URL).")
-else:
-    logger.error("DATABASE_URL environment variable not set. Bot будет работать с ограниченной функциональностью.")
+# PostgreSQL больше не используется, так как данные хранятся в Google Sheets
+# Настраиваем минимальную SQLite в памяти для совместимости с кодом
+app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///:memory:"
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {}
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ECHO"] = False
+
+# Инициализируем db для поддержки совместимости
+db.init_app(app)
+logger.info("PostgreSQL больше не используется. Все данные хранятся в Google Sheets.")
 
 # Переменные для хранения менеджера Google Sheets и данных обратной связи
 sheets_manager = None
@@ -200,7 +139,8 @@ bot_auto_start = bot_auto_start_value in ["true", "yes", "1", "on", "t", "y"]
 logger.info(f"BOT_AUTO_START={bot_auto_start_value} (интерпретировано как {bot_auto_start})")
 
 has_telegram_token = bool(os.environ.get("TELEGRAM_TOKEN"))
-database_configured = bool(database_url)
+# PostgreSQL больше не используется, все данные в Google Sheets
+database_configured = True
 
 # Временно принудительно активируем автозапуск для отладки
 forced_auto_start = True
@@ -433,8 +373,8 @@ def health_check():
     # Проверяем статус подключения к Google Sheets
     sheets_status = "active" if google_sheets_available and sheets_manager else "inactive"
     
-    # Проверяем статус подключения к PostgreSQL
-    db_status = "active" if app.config.get("SQLALCHEMY_DATABASE_URI") else "inactive"
+    # PostgreSQL больше не используется, был полностью заменен Google Sheets
+    db_status = "inactive"
     
     # Проверяем, запущен ли бот
     bot_thread_active = "running" if (bot_auto_start or forced_auto_start) and has_telegram_token else "stopped"
