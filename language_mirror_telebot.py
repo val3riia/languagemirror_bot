@@ -606,13 +606,26 @@ def handle_feedback_bonus(call):
     bonus_available = False
     
     # Проверяем, доступен ли Google Sheets
-    if 'sheets_manager' in globals() and sheets_manager:
-        # Проверяем, есть ли у пользователя доступный бонус
-        bonus_available = not sheets_manager.has_user_used_feedback_bonus(user_id)
+    try:
+        from sheets_manager import get_sheets_manager
+        sheets_manager = get_sheets_manager()
         
-        if bonus_available:
-            # Обновляем флаг использования бонуса
-            sheets_manager.set_feedback_bonus_used(user_id, True)
+        if sheets_manager:
+            # Получаем пользователя
+            sheet_user = sheets_manager.get_user_by_telegram_id(user_id)
+            
+            if sheet_user:
+                # Проверяем, использовал ли пользователь бонус
+                bonus_available = not sheet_user.get("feedback_bonus_used", False)
+                
+                if bonus_available:
+                    # Обновляем данные пользователя
+                    sheets_manager.update_user(sheet_user["id"], {
+                        "feedback_bonus_used": True
+                    })
+                    logger.info(f"Бонус за обратную связь активирован для пользователя {user_id}")
+    except Exception as e:
+        logger.error(f"Ошибка при проверке и обновлении бонуса: {e}")
             
     # Показываем клавиатуру выбора уровня языка
     if bonus_available:
@@ -664,22 +677,38 @@ def handle_feedback(call):
     )
     
     # Сохраняем тип обратной связи во временном хранилище для следующего обработчика
-    if 'session_manager' in globals():
-        # Завершаем сессию в базе данных, но сохраняем информацию о feedback
-        session = session_manager.get_session(user_id)
-        if session:
-            session_manager.end_session(user_id)
+    try:
+        from sheets_session_manager import get_session_manager
+        session_manager = get_session_manager()
         
-        # Создаем временную сессию только для хранения типа обратной связи
-        session_manager.create_session(user_id, {"feedback_type": feedback_type})
-    else:
-        # В telebot нет user_data как в python-telegram-bot, поэтому используем сессии
+        if session_manager:
+            # Завершаем сессию в базе данных, но сохраняем информацию о feedback
+            session = session_manager.get_session(user_id)
+            if session:
+                session_manager.end_session(user_id)
+            
+            # Создаем временную сессию только для хранения типа обратной связи
+            session_manager.create_session(user_id, {"feedback_type": feedback_type})
+            logger.info(f"Создана временная сессия для хранения обратной связи типа: {feedback_type}")
+        else:
+            # В случае недоступности Google Sheets используем локальное хранилище
+            if user_id in user_sessions:
+                user_sessions[user_id]["feedback_type"] = feedback_type
+                # Очищаем сессию (сохраняем только feedback_type)
+                user_sessions[user_id] = {
+                    "feedback_type": feedback_type,
+                    "last_active": time.time()
+                }
+                logger.info(f"Информация о feedback сохранена в локальном хранилище: {feedback_type}")
+    except Exception as e:
+        # В случае ошибки используем локальное хранилище
+        logger.error(f"Ошибка при работе с session_manager: {e}")
         if user_id in user_sessions:
             user_sessions[user_id]["feedback_type"] = feedback_type
-            # Очищаем сессию (сохраняем только feedback_type)
             user_sessions[user_id] = {
                 "feedback_type": feedback_type,
                 "last_active": time.time()
+            }
             }
         else:
             user_sessions[user_id] = {
@@ -741,15 +770,35 @@ def handle_feedback_comment(message):
             # Выполняем в отдельном потоке, чтобы не блокировать бота
             def save_to_sheets():
                 try:
-                    # Добавляем запись обратной связи в Google Sheets
-                    sheets_manager.add_feedback(
-                        telegram_id=user_id,
-                        rating=feedback_type,
-                        comment=comment,
-                        username=username,
-                        first_name=first_name,
-                        last_name=last_name
-                    )
+                    # Получаем пользователя или создаем нового
+                    from sheets_manager import get_sheets_manager
+                    sheets_manager = get_sheets_manager()
+                    
+                    if sheets_manager:
+                        # Получаем пользователя или создаем нового
+                        sheet_user = sheets_manager.get_user_by_telegram_id(user_id)
+                        if not sheet_user:
+                            sheet_user = sheets_manager.create_user(
+                                user_id=user_id,
+                                username=username,
+                                first_name=first_name,
+                                last_name=last_name
+                            )
+                            
+                        # Преобразуем rating в числовую оценку
+                        rating_value = {
+                            "helpful": 5,
+                            "okay": 3,
+                            "not_helpful": 1,
+                            "unknown": 3
+                        }.get(feedback_type, 3)
+                        
+                        # Добавляем запись обратной связи в Google Sheets
+                        sheets_manager.add_feedback(
+                            user_id=sheet_user["id"],
+                            rating=rating_value,
+                            comment=comment
+                        )
                     
                     # Проверяем, содержит ли комментарий минимум слов для предоставления бонуса
                     words = comment.split()
