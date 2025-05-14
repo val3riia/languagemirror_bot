@@ -408,6 +408,32 @@ def page_not_found(e):
 def server_error(e):
     """Handle 500 errors"""
     return jsonify({"error": "Server error"}), 500
+    
+@app.route('/health', methods=['GET'])
+def health_check():
+    """
+    Эндпоинт проверки состояния бота для UptimeRobot.
+    Возвращает статус 200, если бот работает.
+    """
+    # Проверяем статус подключения к Google Sheets
+    sheets_status = "active" if google_sheets_available and sheets_manager else "inactive"
+    
+    # Проверяем статус подключения к PostgreSQL
+    db_status = "active" if app.config.get("SQLALCHEMY_DATABASE_URI") else "inactive"
+    
+    # Проверяем, запущен ли бот
+    bot_thread_active = "running" if (bot_auto_start or forced_auto_start) and has_telegram_token else "stopped"
+    
+    return jsonify({
+        "status": "ok",
+        "timestamp": datetime.now().isoformat(),
+        "storage": {
+            "google_sheets": sheets_status,
+            "postgresql": db_status
+        },
+        "bot": bot_thread_active,
+        "version": "1.0.0"
+    }), 200
 
 # Create templates directory if it doesn't exist
 os.makedirs('templates', exist_ok=True)
