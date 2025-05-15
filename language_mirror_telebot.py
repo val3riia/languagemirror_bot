@@ -370,7 +370,7 @@ def handle_start(message):
 def handle_discussion(message):
     """Обрабатывает команду /discussion."""
     # Создаем инлайн-клавиатуру для выбора уровня сложности
-    inline_markup = types.InlineKeyboardMarkup(row_width=3)
+    inline_markup = types.InlineKeyboardMarkup(row_width=2)
     
     # Добавляем кнопки уровней языка
     beginner_button = types.InlineKeyboardButton("A1 - Beginner", callback_data="level_A1")
@@ -476,13 +476,12 @@ def handle_discussion(message):
         'C2': 'Proficient'
     }
     
-    # Создаем клавиатуру для выбора уровня языка
-    markup = types.InlineKeyboardMarkup()
-    for level, description in LANGUAGE_LEVELS.items():
-        markup.add(types.InlineKeyboardButton(
-            f"{level} - {description}", 
-            callback_data=f"level_{level}"
-        ))
+    # Отправляем сообщение с выбором уровня языка, используя инлайн-клавиатуру, созданную выше
+    bot.send_message(
+        chat_id,
+        "Пожалуйста, выберите ваш уровень владения английским языком:",
+        reply_markup=inline_markup
+    )
     
     # Если у нас есть менеджер сессий и пользователь не является администратором
     # Обновляем статистику использования
