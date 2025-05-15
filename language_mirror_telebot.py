@@ -1292,6 +1292,9 @@ def handle_admin_feedback(message):
     Эта команда доступна только администраторам и позволяет им получать отчет об обратной связи
     прямо из базы данных.
     """
+    # Импортируем os в начале функции для использования во всех блоках
+    import os
+    
     # Принудительно включаем отладочный режим для этой функции
     debug_this_function = True
     
@@ -1301,7 +1304,6 @@ def handle_admin_feedback(message):
     print(f"ADMIN_USERS: {ADMIN_USERS}")
     # БД больше не используется, теперь используется Google Sheets
     try:
-        import os
         print(f"GOOGLE_SHEETS_KEY настроен: {bool(os.environ.get('GOOGLE_SHEETS_KEY'))}")
     except Exception as e:
         print(f"Ошибка при проверке GOOGLE_SHEETS_KEY: {e}")
@@ -1352,10 +1354,13 @@ def handle_admin_feedback(message):
     
     # В отладочном режиме всегда разрешаем доступ
     if DEBUG_MODE:
-        debug_admin_id = int(os.environ.get("DEBUG_ADMIN_ID", "0"))
-        if debug_admin_id and user_id == debug_admin_id:
-            is_admin = True
-            logger.info(f"Пользователь (ID: {user_id}) авторизован как администратор в режиме отладки")
+        try:
+            debug_admin_id = int(os.environ.get("DEBUG_ADMIN_ID", "0"))
+            if debug_admin_id and user_id == debug_admin_id:
+                is_admin = True
+                logger.info(f"Пользователь (ID: {user_id}) авторизован как администратор в режиме отладки")
+        except Exception as e:
+            logger.error(f"Ошибка при проверке DEBUG_ADMIN_ID: {str(e)}")
     
     # Логгируем результат проверки (без чувствительных данных)
     logger.info(f"Проверка прав администратора завершена, результат: {is_admin}")
@@ -1375,12 +1380,36 @@ def handle_admin_feedback(message):
     bot.send_message(message.chat.id, "🔄 Получение данных обратной связи...")
     
     try:
+        # Импортируем os для доступа к переменным окружения
+        import os
         # Проверяем наличие необходимых переменных окружения для Google Sheets
-        google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
-        google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY")
+        google_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH", "credentials/google_service_account.json")
+        google_sheets_key = os.environ.get("GOOGLE_SHEETS_KEY", "1t9ontCTjbu71FbDtpaPtW7YhM_Exk-iZqewv7qxhQVU")
         
-        if not google_creds_path or not google_sheets_key:
-            error_msg = "❌ Ошибка: переменные окружения GOOGLE_CREDENTIALS_PATH или GOOGLE_SHEETS_KEY не найдены"
+        # Проверяем, что файл учетных данных существует
+        if not os.path.exists(google_creds_path):
+            logger.warning(f"Файл учетных данных Google не найден по пути: {google_creds_path}")
+            
+            # Проверяем наличие файла в других местах
+            alt_path = "credentials/google_service_account.json"
+            if os.path.exists(alt_path):
+                logger.info(f"Найден альтернативный путь к файлу учетных данных: {alt_path}")
+                google_creds_path = alt_path
+            else:
+                error_msg = f"❌ Ошибка: файл учетных данных Google не найден ни по пути из переменной окружения, ни по альтернативному пути: {alt_path}"
+                logger.error(error_msg)
+                bot.send_message(
+                    message.chat.id,
+                    error_msg + "\n\nНеобходимо настроить подключение к Google Sheets в переменных окружения."
+                )
+                
+                # Создаем отчет без подключения к Google Sheets
+                create_empty_report(message.chat.id)
+                return
+        
+        # Проверяем наличие ключа Google Sheets
+        if not google_sheets_key:
+            error_msg = "❌ Ошибка: ключ Google Sheets не задан в переменной окружения GOOGLE_SHEETS_KEY"
             logger.error(error_msg)
             bot.send_message(
                 message.chat.id,
@@ -1390,6 +1419,10 @@ def handle_admin_feedback(message):
             # Создаем отчет без подключения к Google Sheets
             create_empty_report(message.chat.id)
             return
+            
+        # Логируем информацию о найденных параметрах
+        logger.info(f"Используем учетные данные из: {google_creds_path}")
+        logger.info(f"Используем ключ таблицы: {google_sheets_key[:5]}...")
         
         # Отладочное сообщение
         logger.info("🔍 Подключение к Google Sheets...")
