@@ -53,6 +53,9 @@ ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "")
 # Словарь администраторов
 ADMIN_USERS = {}
 
+# Глобальное хранилище для временного хранения данных обратной связи
+user_feedback_data = {}
+
 # Принудительно добавляем администратора для отладки при необходимости
 DEFAULT_ADMIN_USERNAME = "admin"
 DEFAULT_ADMIN_USER_ID = 123456789  # Замените на свой ID при тестировании
@@ -1455,14 +1458,23 @@ def handle_admin_feedback(message):
                 if record.rating in rating_counts:
                     rating_counts[record.rating] += 1
             
-            # Отправляем отчет администратору
+            # Сохраняем данные обратной связи для использования в колбэках
+            user_feedback_data[message.from_user.id] = feedback_records
+            
+            # Создаем инлайн-клавиатуру с опциями отчета
+            report_markup = types.InlineKeyboardMarkup(row_width=2)
+            excel_button = types.InlineKeyboardButton("📊 Excel отчет", callback_data="admin_excel_report")
+            text_button = types.InlineKeyboardButton("📝 Текстовый отчет", callback_data="admin_text_report")
+            chart_button = types.InlineKeyboardButton("📈 Статистика оценок", callback_data="admin_rating_chart")
+            report_markup.add(excel_button, text_button)
+            report_markup.add(chart_button)
+            
+            # Отправляем отчет администратору с инлайн-кнопками
             report = "📊 *Отчет по обратной связи*\n\n"
             report += f"👍 Полезно: {rating_counts['helpful']}\n"
             report += f"🤔 Нормально: {rating_counts['okay']}\n"
             report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
-            
-            # Добавляем последние 5 комментариев с подробной информацией
-            report += "*Последние комментарии:*\n"
+            report += "Выберите действие для получения подробного отчета:"
             comment_count = 0
             
             for record, telegram_id, username, first_name, last_name in feedback_records:
