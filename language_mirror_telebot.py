@@ -126,6 +126,12 @@ LANGUAGE_LEVELS = {
     "C2": "Proficiency - You can understand virtually everything heard or read"
 }
 
+# Глобальные переменные для хранения состояния
+user_sessions = {}  # Основной словарь сессий
+feedback_pending = {}  # Ожидание обратной связи
+user_feedback_data = {}  # Данные обратной связи для администратора
+inline_admin_markup = None  # Клавиатура для админа
+
 # Глобальные переменные для хранения менеджера сессий
 session_manager = None
 sheets_manager = None
@@ -1799,7 +1805,16 @@ def handle_admin_callback(call):
     feedback_records = user_feedback_data[user_id]
     
     # Обрабатываем различные типы callback
-    if call.data == "admin_excel_report":
+    if call.data == "show_admin_feedback":
+        bot.answer_callback_query(call.id, "Загружаю данные обратной связи...")
+        # Вызываем функцию handle_admin_feedback, создавая объект сообщения с необходимыми атрибутами
+        admin_message = type('Message', (), {
+            'chat': type('Chat', (), {'id': chat_id}),
+            'from_user': type('User', (), {'id': user_id, 'username': call.from_user.username}),
+        })
+        handle_admin_feedback(admin_message)
+        return
+    elif call.data == "admin_excel_report":
         bot.answer_callback_query(call.id, "Создаю Excel-отчет...")
         
         try:
