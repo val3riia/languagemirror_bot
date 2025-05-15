@@ -1299,7 +1299,8 @@ def handle_admin_feedback(message):
     print("===================== ADMIN FEEDBACK COMMAND STARTED =====================")
     print(f"User ID: {message.from_user.id}, Username: {message.from_user.username}")
     print(f"ADMIN_USERS: {ADMIN_USERS}")
-    print(f"DATABASE_URL настроен: {bool(os.environ.get('DATABASE_URL'))}")
+    # БД больше не используется, теперь используется Google Sheets
+    print(f"GOOGLE_SHEETS_KEY настроен: {bool(os.environ.get('GOOGLE_SHEETS_KEY'))}")
     
     # Логируем начало выполнения команды
     logger.info(f"🔍 Начало обработки команды /admin_feedback")
@@ -1669,7 +1670,9 @@ def create_empty_report(chat_id):
         
         # Удаляем временный файл
         try:
+            import os
             os.remove(excel_path)
+            logger.info(f"Временный файл удален: {excel_path}")
         except Exception as e:
             logger.error(f"Не удалось удалить временный файл: {str(e)}")
             
