@@ -369,6 +369,21 @@ def handle_start(message):
 @bot.message_handler(commands=['discussion'])
 def handle_discussion(message):
     """Обрабатывает команду /discussion."""
+    # Создаем инлайн-клавиатуру для выбора уровня сложности
+    inline_markup = types.InlineKeyboardMarkup(row_width=3)
+    
+    # Добавляем кнопки уровней языка
+    beginner_button = types.InlineKeyboardButton("A1 - Beginner", callback_data="level_A1")
+    elementary_button = types.InlineKeyboardButton("A2 - Elementary", callback_data="level_A2")
+    intermediate_button = types.InlineKeyboardButton("B1 - Intermediate", callback_data="level_B1")
+    upper_button = types.InlineKeyboardButton("B2 - Upper Intermediate", callback_data="level_B2")
+    advanced_button = types.InlineKeyboardButton("C1 - Advanced", callback_data="level_C1")
+    proficient_button = types.InlineKeyboardButton("C2 - Proficient", callback_data="level_C2")
+    
+    # Добавляем кнопки на инлайн-клавиатуру
+    inline_markup.add(beginner_button, elementary_button)
+    inline_markup.add(intermediate_button, upper_button)
+    inline_markup.add(advanced_button, proficient_button)
     user_id = message.from_user.id
     chat_id = message.chat.id
     username = message.from_user.username if hasattr(message.from_user, 'username') else ""
