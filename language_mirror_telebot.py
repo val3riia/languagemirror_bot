@@ -1801,15 +1801,9 @@ def handle_admin_callback(call):
         bot.answer_callback_query(call.id, "Эта функция доступна только администраторам.")
         return
     
-    # Проверяем наличие данных о обратной связи
-    if user_id not in user_feedback_data:
-        bot.answer_callback_query(call.id, "Данные отчета недоступны. Пожалуйста, запросите заново /admin_feedback.")
-        return
-    
-    feedback_records = user_feedback_data[user_id]
-    
     # Обрабатываем различные типы callback
     if call.data == "show_admin_feedback":
+        # Для этой кнопки не требуется проверка наличия данных, т.к. они будут получены в handle_admin_feedback
         bot.answer_callback_query(call.id, "Загружаю данные обратной связи...")
         # Вызываем функцию handle_admin_feedback, создавая объект сообщения с необходимыми атрибутами
         admin_message = type('Message', (), {
@@ -1818,7 +1812,16 @@ def handle_admin_callback(call):
         })
         handle_admin_feedback(admin_message)
         return
-    elif call.data == "admin_excel_report":
+    
+    # Для остальных callback-запросов нужно проверить наличие данных о обратной связи
+    if user_id not in user_feedback_data:
+        bot.answer_callback_query(call.id, "Данные отчета недоступны. Пожалуйста, запросите заново /admin_feedback.")
+        return
+    
+    # Получаем данные обратной связи для всех остальных типов запросов
+    feedback_records = user_feedback_data[user_id]
+    
+    if call.data == "admin_excel_report":
         bot.answer_callback_query(call.id, "Создаю Excel-отчет...")
         
         try:
