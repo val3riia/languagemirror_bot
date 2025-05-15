@@ -375,7 +375,8 @@ def handle_start(message):
                 "telegram_id": str(message.from_user.id),
                 "username": message.from_user.username or "",
                 "first_name": message.from_user.first_name or "",
-                "last_name": message.from_user.last_name or ""
+                "last_name": message.from_user.last_name or "",
+                "message_count": 0  # Инициализируем счетчик сообщений
             }
             
             # Создаем/обновляем сессию с данными о пользователе
@@ -1247,11 +1248,16 @@ def handle_all_messages(message):
         
         # Отправляем ответ со статьями и завершаем беседу
         bot.send_message(message.chat.id, articles_text, parse_mode="Markdown")
+        
+        # Сообщение о завершении с запросом обратной связи
         bot.send_message(
             message.chat.id,
             "Hope that gave you something to think about! Want to explore another topic? Just type /discussion.\n\nHow was that for you?",
             reply_markup=markup
         )
+        
+        # Автоматически завершаем сессию после предоставления статей
+        logger.info(f"Автоматическое завершение сессии после предоставления статей для пользователя {user_id}")
         
         # Заканчиваем сессию
         if session_manager is not None:
@@ -1281,19 +1287,114 @@ def handle_all_messages(message):
         # Генерируем ответ на основе сообщения пользователя и истории
         response = generate_learning_response(user_message, language_level, conversation_history)
         
-        # Сохраняем ответ бота в сессии
+        # Сохраняем ответ бота в сессии и проверяем счетчик сообщений
         if session_manager is not None:
             try:
+                # Добавляем сообщение ассистента
                 session_manager.add_message_to_session(user_id, "assistant", response)
+                
+                # Получаем текущую сессию, чтобы обновить счетчик сообщений
+                session = session_manager.get_session(user_id)
+                if session:
+                    # Увеличиваем счетчик сообщений
+                    message_count = session.get("message_count", 0)
+                    message_count += 1
+                    
+                    # Обновляем счетчик сообщений в сессии
+                    session_manager.update_session(user_id, {"message_count": message_count})
+                    
+                    # Проверяем, нужно ли закрыть сессию после 3-х сообщений
+                    if message_count >= 3 and session_mode == "conversation":
+                        # Отправляем ответ пользователю
+                        bot.send_message(message.chat.id, response)
+                        
+                        # Логируем автоматическое завершение
+                        logger.info(f"Автоматическое завершение беседы после 3 сообщений для пользователя {user_id}")
+                        
+                        # Отправляем сообщение о завершении
+                        bot.send_message(
+                            message.chat.id,
+                            "We've had a good conversation! If you'd like to talk more or get article recommendations, "
+                            "just use /discussion to start a new session."
+                        )
+                        
+                        # Создаем клавиатуру для обратной связи
+                        markup = types.InlineKeyboardMarkup(row_width=3)
+                        markup.add(
+                            types.InlineKeyboardButton("👍 Helpful", callback_data="feedback_helpful"),
+                            types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
+                            types.InlineKeyboardButton("👎 Not helpful", callback_data="feedback_not_helpful")
+                        )
+                        
+                        # Запрашиваем обратную связь
+                        bot.send_message(
+                            message.chat.id,
+                            "How was our conversation?",
+                            reply_markup=markup
+                        )
+                        
+                        # Заканчиваем сессию
+                        try:
+                            session_manager.end_session(user_id)
+                        except Exception as e:
+                            logger.error(f"Ошибка при завершении сессии в session_manager: {e}")
+                        
+                        # Прерываем выполнение функции, чтобы не отправлять повторное сообщение
+                        return
+                
             except Exception as e:
-                logger.error(f"Ошибка при добавлении сообщения в session_manager: {e}")
+                logger.error(f"Ошибка при обработке сообщения ассистента: {e}")
                 # В случае ошибки пытаемся использовать резервный способ хранения
                 if user_id in user_sessions and "messages" in user_sessions[user_id]:
                     user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
         else:
+            # Старая система хранения в памяти
             user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
+            
+            # Увеличиваем счетчик сообщений
+            message_count = user_sessions[user_id].get("message_count", 0) + 1
+            user_sessions[user_id]["message_count"] = message_count
+            
+            # Проверяем, нужно ли закрыть сессию после 3-х сообщений
+            if message_count >= 3 and session_mode == "conversation":
+                # Отправляем ответ пользователю
+                bot.send_message(message.chat.id, response)
+                
+                # Логируем автоматическое завершение
+                logger.info(f"Автоматическое завершение беседы после 3 сообщений для пользователя {user_id}")
+                
+                # Отправляем сообщение о завершении
+                bot.send_message(
+                    message.chat.id,
+                    "We've had a good conversation! If you'd like to talk more or get article recommendations, "
+                    "just use /discussion to start a new session."
+                )
+                
+                # Создаем клавиатуру для обратной связи
+                markup = types.InlineKeyboardMarkup(row_width=3)
+                markup.add(
+                    types.InlineKeyboardButton("👍 Helpful", callback_data="feedback_helpful"),
+                    types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
+                    types.InlineKeyboardButton("👎 Not helpful", callback_data="feedback_not_helpful")
+                )
+                
+                # Запрашиваем обратную связь
+                bot.send_message(
+                    message.chat.id,
+                    "How was our conversation?",
+                    reply_markup=markup
+                )
+                
+                # Очищаем сессию, оставляя только флаг обратной связи
+                user_sessions[user_id] = {
+                    "last_active": time.time(),
+                    "waiting_for_feedback": True
+                }
+                
+                # Прерываем выполнение функции, чтобы не отправлять повторное сообщение
+                return
         
-        # Отправляем ответ пользователю
+        # Отправляем ответ пользователю (только если сессия не была завершена)
         bot.send_message(message.chat.id, response)
 
 # При необходимости переадресуем /help на /start для совместимости
