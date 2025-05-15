@@ -57,8 +57,9 @@ ADMIN_USERS = {}
 user_feedback_data = {}
 
 # Принудительно добавляем администратора для отладки при необходимости
-DEFAULT_ADMIN_USERNAME = "admin"
-DEFAULT_ADMIN_USER_ID = 123456789  # Замените на свой ID при тестировании
+DEFAULT_ADMIN_USERNAME = "avr3lia"
+DEFAULT_ADMIN_USER_ID = 5783753055  # Реальный ID пользователя для тестирования
+logger.info(f"Установлены значения администратора по умолчанию: username={DEFAULT_ADMIN_USERNAME}, user_id={DEFAULT_ADMIN_USER_ID}")
 
 # Обрабатываем основные переменные окружения
 if ADMIN_USERNAME and ADMIN_USER_ID:
@@ -1778,6 +1779,8 @@ def create_empty_report(chat_id):
 @bot.callback_query_handler(func=lambda call: call.data.startswith('admin_') or call.data == 'show_admin_feedback')
 def handle_admin_callback(call):
     """Обрабатывает callback-запросы от кнопок в админ-функциях."""
+    # Глобальное отладочное сообщение для проверки ADMIN_USERS
+    logger.info(f"[ОТЛАДКА ADMIN_CALLBACK] Текущие администраторы: {ADMIN_USERS}")
     
     user_id = call.from_user.id
     chat_id = call.message.chat.id
