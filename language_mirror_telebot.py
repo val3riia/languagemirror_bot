@@ -334,64 +334,55 @@ def handle_start(message):
     welcome_text += "I'm Language Mirror, an AI assistant that helps you learn English through topics "
     welcome_text += "that genuinely interest you – your thoughts, experiences, and feelings.\n\n"
     welcome_text += "🔹 Bot Features:\n\n"
-    welcome_text += "• Conversation Practice - chat with me on any topic to improve your English\n"
     welcome_text += "• Level Adaptation - I adjust to your language proficiency (from A1 to C2)\n"
-    welcome_text += "• Error Correction - I gently correct your mistakes to help you improve\n"
-    welcome_text += "• Personalized Topics - I suggest discussion topics based on your level\n"
-    welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n"
-    welcome_text += "• Feedback System - provide feedback after conversations to help improve the bot\n\n"
+    welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n\n"
     welcome_text += "🔹 Main Commands:\n\n"
     welcome_text += "• /start - show this welcome message\n"
     welcome_text += "• /discussion - start an English conversation or get article recommendations (1 request per day)\n"
     welcome_text += "• /stop_discussion - end the current conversation\n\n"
+    welcome_text += "💡 Tip: Provide feedback after conversations to receive a bonus article request!\n\n"
     welcome_text += "Use the buttons below or type a command to get started!"
     
     # Отправляем сообщение
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
     
-    # Отправляем сообщение с админ-кнопкой всем пользователям
-    admin_message = "🔍 *Дополнительные возможности*\n\nВы можете использовать эти функции, если у вас есть необходимые права."
-    
-    # Создаем инлайн-клавиатуру для всех пользователей
-    admin_inline_markup = types.InlineKeyboardMarkup()
-    admin_feedback_button = types.InlineKeyboardButton(
-        "📊 Получить отчет по обратной связи", 
-        callback_data="show_admin_feedback"
-    )
-    admin_inline_markup.add(admin_feedback_button)
-    
-    # Если пользователь администратор, добавляем информацию об этом
+    # Отправляем разное сообщение в зависимости от прав доступа
     if is_admin:
+        # Для администраторов - видят панель администратора
         admin_message = "👨‍💼 *Панель администратора*\n\nВы авторизованы как администратор. Используйте кнопки ниже для доступа к функциям администратора."
-    
-    bot.send_message(message.chat.id, admin_message, parse_mode="Markdown", reply_markup=admin_inline_markup)
-    
-    # Обновляем пользователя в базе данных или создаем нового
-    try:
-        from models import db, User
-        from main import app
         
-        with app.app_context():
-            # Ищем пользователя в базе данных
-            user_record = User.query.filter_by(telegram_id=message.from_user.id).first()
+        # Создаем инлайн-клавиатуру для администраторов
+        admin_inline_markup = types.InlineKeyboardMarkup()
+        admin_feedback_button = types.InlineKeyboardButton(
+            "📊 Получить отчет по обратной связи", 
+            callback_data="show_admin_feedback"
+        )
+        admin_inline_markup.add(admin_feedback_button)
+        
+        # Отправляем сообщение администратора
+        bot.send_message(message.chat.id, admin_message, parse_mode="Markdown", reply_markup=admin_inline_markup)
+    else:
+        # Для обычных пользователей - кнопка не отображается
+        logger.info(f"Кнопки администратора не отображаются для обычного пользователя {message.from_user.username or message.from_user.id}")
+    
+    # Обновляем пользователя в Google Sheets или создаем нового (если настроено)
+    try:
+        # Используем нашу реализацию хранения сессий в Google Sheets
+        if session_manager:
+            # Создаем или обновляем информацию о пользователе в сессии
+            user_data = {
+                "last_activity": datetime.utcnow().isoformat(),
+                "telegram_id": str(message.from_user.id),
+                "username": message.from_user.username or "",
+                "first_name": message.from_user.first_name or "",
+                "last_name": message.from_user.last_name or ""
+            }
             
-            if not user_record:
-                # Создаем нового пользователя, если не существует
-                user_record = User(
-                    telegram_id=message.from_user.id,
-                    username=message.from_user.username,
-                    first_name=message.from_user.first_name,
-                    last_name=message.from_user.last_name
-                )
-                db.session.add(user_record)
-                db.session.commit()
-                logger.info(f"New user registered: {message.from_user.id} ({message.from_user.username})")
-            else:
-                # Обновляем дату последней активности
-                user_record.last_activity = datetime.utcnow()
-                db.session.commit()
-    except Exception:
-        logger.error("Error updating user in database")
+            # Создаем/обновляем сессию с данными о пользователе
+            session_manager.create_session(message.from_user.id, user_data)
+            logger.info(f"Session created/updated for user: {message.from_user.id} ({message.from_user.username})")
+    except Exception as e:
+        logger.error(f"Error updating user info: {str(e)}")
 
 @bot.message_handler(commands=['discussion'])
 def handle_discussion(message):
@@ -874,13 +865,24 @@ def handle_feedback_comment(message):
                     logger.info(f"Комментарий содержит {len(words)} слов (минимум для бонуса: {min_words_for_bonus})")
                     
                     if len(words) >= min_words_for_bonus:
-                        # Обновляем статус обратной связи пользователя, предоставляя бонус
-                        sheets_manager.set_feedback_bonus_used(user_id, False)  # Разрешаем использовать бонусный запрос
-                        
                         # Проверяем, что sheets_manager существует перед вызовом его методов
                         try:
-                            if sheets_manager:
-                                sheets_manager.set_feedback_bonus_used(user_id, False)  # Разрешаем использовать бонусный запрос
+                            # Устанавливаем бонус через API сессий Google Sheets
+                            session_data = {
+                                "has_feedback_bonus": True,
+                                "feedback_bonus_used": False
+                            }
+                            
+                            # Используем update_user_info в session_manager, если доступно
+                            if session_manager and hasattr(session_manager, 'update_user_info'):
+                                session_manager.update_user_info(user_id, session_data)
+                                logger.info(f"Бонус обратной связи установлен для пользователя {user_id}")
+                            elif sheets_manager:
+                                # Альтернативный вариант - найдем активную сессию и обновим ее
+                                active_session = sheets_manager.get_active_session_for_user(user_id)
+                                if active_session:
+                                    sheets_manager.update_session(active_session.get('id'), session_data)
+                                    logger.info(f"Бонус обратной связи установлен через активную сессию для пользователя {user_id}")
                         except Exception as e:
                             logger.error(f"Ошибка при установке бонуса: {e}")
                             
