@@ -422,6 +422,20 @@ def handle_discussion(message):
     
     # Если сессия не активна, проверяем лимиты на использование
     if not active_session:
+        # Исправляем проблему с markup
+        inline_markup = types.InlineKeyboardMarkup(row_width=2)
+        beginner_button = types.InlineKeyboardButton("A1 - Beginner", callback_data="level_A1")
+        elementary_button = types.InlineKeyboardButton("A2 - Elementary", callback_data="level_A2")
+        intermediate_button = types.InlineKeyboardButton("B1 - Intermediate", callback_data="level_B1")
+        upper_button = types.InlineKeyboardButton("B2 - Upper Intermediate", callback_data="level_B2")
+        advanced_button = types.InlineKeyboardButton("C1 - Advanced", callback_data="level_C1")
+        proficient_button = types.InlineKeyboardButton("C2 - Proficient", callback_data="level_C2")
+        
+        # Добавляем кнопки на инлайн-клавиатуру
+        inline_markup.add(beginner_button, elementary_button)
+        inline_markup.add(intermediate_button, upper_button)
+        inline_markup.add(advanced_button, proficient_button)
+        
         # Проверяем лимит на количество запросов в день
         from datetime import date
         today = date.today()
@@ -479,12 +493,18 @@ def handle_discussion(message):
         'C2': 'Proficient'
     }
     
-    # Отправляем сообщение с выбором уровня языка, используя инлайн-клавиатуру, созданную выше
+    # Отправляем сообщение для выбора уровня
     bot.send_message(
         chat_id,
         "Пожалуйста, выберите ваш уровень владения английским языком:",
         reply_markup=inline_markup
     )
+    
+    # Прерываем выполнение - дальнейшая обработка будет через callback
+    return
+    
+    # Эта часть кода теперь не нужна, так как мы создаем inline_markup внутри функции
+    # и отправляем сообщение о выборе уровня позже в коде
     
     # Если у нас есть менеджер сессий и пользователь не является администратором
     # Обновляем статистику использования
@@ -511,13 +531,8 @@ def handle_discussion(message):
         except Exception as e:
             logger.error(f"Ошибка при обновлении статистики: {str(e)}")
     
-    # Отправляем сообщение с выбором уровня языка
-    bot.send_message(
-        chat_id,
-        "Прежде чем начать, я хотел бы узнать ваш уровень владения английским языком, "
-        "чтобы адаптировать свои ответы к вашим потребностям. Пожалуйста, выберите ваш уровень:",
-        reply_markup=markup
-    )
+    # Этот код теперь не нужен, так как мы уже отправили сообщение выше
+    # и return прервал выполнение функции
     logger.info(f"Пользователю {username} (ID: {user_id}) предложен выбор уровня языка")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('level_'))
@@ -1735,6 +1750,182 @@ def create_empty_report(chat_id):
         logger.error(f"Ошибка в функции create_empty_report: {str(e)}")
         bot.send_message(chat_id, f"❌ Ошибка при создании отчета: {str(e)}")
 
+
+# Обработчик для административных callback-запросов
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+def handle_admin_callback(call):
+    """Обрабатывает callback-запросы от кнопок в админ-функциях."""
+    
+    user_id = call.from_user.id
+    chat_id = call.message.chat.id
+    
+    # Проверяем, что пользователь является администратором
+    username = call.from_user.username if hasattr(call.from_user, 'username') else None
+    
+    # Флаг администратора
+    is_admin = False
+    
+    # Проверяем все возможные варианты
+    if username and username.lower() in ADMIN_USERS:
+        is_admin = True
+    elif str(user_id) in [str(admin_id) for admin_id in ADMIN_USERS.values() if admin_id]:
+        is_admin = True
+    elif "" in ADMIN_USERS and ADMIN_USERS.get("") == user_id:
+        is_admin = True
+    
+    # Если не администратор, отклоняем запрос
+    if not is_admin:
+        bot.answer_callback_query(call.id, "Эта функция доступна только администраторам.")
+        return
+    
+    # Проверяем наличие данных о обратной связи
+    if user_id not in user_feedback_data:
+        bot.answer_callback_query(call.id, "Данные отчета недоступны. Пожалуйста, запросите заново /admin_feedback.")
+        return
+    
+    feedback_records = user_feedback_data[user_id]
+    
+    # Обрабатываем различные типы callback
+    if call.data == "admin_excel_report":
+        bot.answer_callback_query(call.id, "Создаю Excel-отчет...")
+        
+        try:
+            # Импортируем модуль для создания отчета
+            from sheets_excel_report import create_temp_excel_for_telegram
+            
+            # Преобразуем данные в формат для Excel
+            excel_data = []
+            for record, telegram_id, username, first_name, last_name in feedback_records:
+                # Создаем запись для Excel
+                excel_record = {
+                    "Telegram ID": telegram_id,
+                    "Username": username,
+                    "First Name": first_name,
+                    "Last Name": last_name,
+                    "Rating": record.rating,
+                    "Comment": record.comment,
+                    "Date": record.timestamp.strftime("%Y-%m-%d %H:%M:%S")
+                }
+                excel_data.append(excel_record)
+            
+            # Генерируем файл отчета
+            excel_path = create_temp_excel_for_telegram(excel_data, "feedback_report.xlsx")
+            
+            # Отправляем файл
+            with open(excel_path, 'rb') as excel_file:
+                bot.send_document(
+                    chat_id,
+                    excel_file,
+                    caption="📊 Полный отчет по обратной связи в формате Excel"
+                )
+            
+            # Удаляем временный файл после отправки
+            try:
+                import os
+                os.remove(excel_path)
+                logger.info(f"Временный Excel-файл удален: {excel_path}")
+            except Exception as e:
+                logger.warning(f"Не удалось удалить временный файл: {str(e)}")
+            
+            logger.info("Excel-отчет успешно отправлен")
+            
+        except Exception as excel_error:
+            logger.error(f"Ошибка при создании Excel-отчета: {str(excel_error)}")
+            bot.send_message(
+                chat_id,
+                f"❌ Не удалось создать Excel-отчет: {str(excel_error)}"
+            )
+            
+    elif call.data == "admin_text_report":
+        bot.answer_callback_query(call.id, "Создаю текстовый отчет...")
+        
+        # Подсчитываем статистику рейтингов
+        rating_counts = {"helpful": 0, "okay": 0, "not_helpful": 0}
+        
+        for record, _, _, _, _ in feedback_records:
+            if record.rating in rating_counts:
+                rating_counts[record.rating] += 1
+        
+        # Формируем подробный текстовый отчет
+        report = "📊 *Детальный отчет по обратной связи*\n\n"
+        report += f"👍 Полезно: {rating_counts['helpful']}\n"
+        report += f"🤔 Нормально: {rating_counts['okay']}\n"
+        report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
+        
+        # Добавляем последние 10 комментариев с подробной информацией
+        report += "*Последние комментарии:*\n"
+        comment_count = 0
+        
+        for record, telegram_id, username, first_name, last_name in feedback_records:
+            if record.comment:
+                comment_count += 1
+                
+                # Формируем имя пользователя для отображения
+                user_display = username or first_name or f"User {telegram_id}"
+                
+                # Преобразуем рейтинг в эмодзи
+                rating_emoji = {
+                    "helpful": "👍",
+                    "okay": "🤔",
+                    "not_helpful": "👎"
+                }.get(record.rating, "❓")
+                
+                # Дата в формате ДД.ММ.ГГГГ
+                date_str = record.timestamp.strftime("%d.%m.%Y")
+                
+                # Экранируем специальные символы Markdown
+                comment = record.comment.replace("*", "\\*").replace("_", "\\_").replace("`", "\\`")
+                
+                # Добавляем информацию о комментарии
+                report += f"{comment_count}. {rating_emoji} *{user_display}* ({date_str}):\n"
+                report += f"\"_{comment}_\"\n\n"
+                
+                if comment_count >= 10:
+                    break
+        
+        if comment_count == 0:
+            report += "_Комментариев пока нет._"
+        
+        # Отправляем отчет
+        bot.send_message(chat_id, report, parse_mode="Markdown")
+        
+    elif call.data == "admin_rating_chart":
+        bot.answer_callback_query(call.id, "Формирую статистику оценок...")
+        
+        # Подсчитываем статистику рейтингов
+        rating_counts = {"helpful": 0, "okay": 0, "not_helpful": 0}
+        
+        for record, _, _, _, _ in feedback_records:
+            if record.rating in rating_counts:
+                rating_counts[record.rating] += 1
+                
+        # Создаем текстовую диаграмму
+        total = sum(rating_counts.values())
+        if total > 0:
+            chart = "📊 *Распределение оценок*\n\n"
+            
+            for rating, count in rating_counts.items():
+                emoji = {
+                    "helpful": "👍",
+                    "okay": "🤔",
+                    "not_helpful": "👎"
+                }.get(rating, "❓")
+                
+                label = {
+                    "helpful": "Полезно",
+                    "okay": "Нормально",
+                    "not_helpful": "Не полезно"
+                }.get(rating, "Другое")
+                
+                percent = int((count / total) * 100)
+                bar = "▓" * int(percent / 5)  # 20 блоков максимум
+                
+                chart += f"{emoji} {label}: {count} ({percent}%)\n"
+                chart += f"{bar}\n\n"
+                
+            bot.send_message(chat_id, chart, parse_mode="Markdown")
+        else:
+            bot.send_message(chat_id, "📊 *Статистика оценок*\n\nПока нет данных для анализа.", parse_mode="Markdown")
 
 def main():
     """Запускает бота."""
