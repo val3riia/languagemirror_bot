@@ -865,24 +865,40 @@ def handle_feedback_comment(message):
                     logger.info(f"Комментарий содержит {len(words)} слов (минимум для бонуса: {min_words_for_bonus})")
                     
                     if len(words) >= min_words_for_bonus:
-                        # Проверяем, что sheets_manager существует перед вызовом его методов
+                        # Устанавливаем бонус через специальный метод в session_manager
                         try:
-                            # Устанавливаем бонус через API сессий Google Sheets
-                            session_data = {
-                                "has_feedback_bonus": True,
-                                "feedback_bonus_used": False
-                            }
+                            bonus_set = False
                             
-                            # Используем update_user_info в session_manager, если доступно
-                            if session_manager and hasattr(session_manager, 'update_user_info'):
-                                session_manager.update_user_info(user_id, session_data)
-                                logger.info(f"Бонус обратной связи установлен для пользователя {user_id}")
-                            elif sheets_manager:
-                                # Альтернативный вариант - найдем активную сессию и обновим ее
-                                active_session = sheets_manager.get_active_session_for_user(user_id)
-                                if active_session:
-                                    sheets_manager.update_session(active_session.get('id'), session_data)
-                                    logger.info(f"Бонус обратной связи установлен через активную сессию для пользователя {user_id}")
+                            # Используем set_feedback_bonus в session_manager, если метод доступен
+                            if session_manager and hasattr(session_manager, 'set_feedback_bonus'):
+                                bonus_set = session_manager.set_feedback_bonus(user_id, False)  # False = бонус доступен
+                                if bonus_set:
+                                    logger.info(f"Бонус обратной связи установлен через session_manager для пользователя {user_id}")
+                            
+                            # Если через session_manager не получилось, пробуем напрямую через sheets_manager
+                            if not bonus_set and sheets_manager:
+                                # Получаем пользователя
+                                sheet_user = sheets_manager.get_user_by_telegram_id(user_id)
+                                if sheet_user:
+                                    # Получаем активную сессию
+                                    active_session = sheets_manager.get_active_session_for_user(sheet_user.get('id'))
+                                    
+                                    # Обновляем данные сессии или пользователя
+                                    session_data = {
+                                        "has_feedback_bonus": True,
+                                        "feedback_bonus_used": False
+                                    }
+                                    
+                                    if active_session:
+                                        sheets_manager.update_session(active_session.get('id'), session_data)
+                                    else:
+                                        sheets_manager.update_user(sheet_user.get('id'), session_data)
+                                        
+                                    logger.info(f"Бонус обратной связи установлен через sheets_manager для пользователя {user_id}")
+                                    bonus_set = True
+                                    
+                            if not bonus_set:
+                                logger.warning(f"Не удалось установить бонус обратной связи для пользователя {user_id}")
                         except Exception as e:
                             logger.error(f"Ошибка при установке бонуса: {e}")
                             

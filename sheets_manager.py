@@ -603,6 +603,20 @@ class SheetsManager:
             logger.error(f"Ошибка при получении активной сессии: {e}")
             return None
 
+    def get_active_session_for_user(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получает активную сессию пользователя (псевдоним для get_active_session).
+        Этот метод реализован для обратной совместимости с кодом, использующим 
+        название get_active_session_for_user.
+        
+        Args:
+            user_id: ID пользователя в таблице
+            
+        Returns:
+            Словарь с данными активной сессии или None, если не найдена
+        """
+        return self.get_active_session(user_id)
+        
     def update_session(self, session_id: int, data: Dict[str, Any]) -> bool:
         """
         Обновляет данные сессии.

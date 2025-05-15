@@ -48,6 +48,108 @@ class SheetSessionManager:
             self.in_memory_sessions = None
             self.use_sheets = True
             logger.info("SheetSessionManager использует Google Sheets для хранения")
+            
+    def update_user_info(self, user_id: int, user_data: Dict[str, Any]) -> bool:
+        """
+        Обновляет информацию о пользователе в Google Sheets.
+        
+        Args:
+            user_id: ID пользователя в Telegram
+            user_data: Данные пользователя для обновления
+            
+        Returns:
+            True при успешном обновлении, False при ошибке
+        """
+        try:
+            if not self.use_sheets or not self.sheets_manager:
+                logger.warning("Google Sheets недоступен для обновления информации о пользователе")
+                return False
+                
+            # Получаем пользователя по telegram_id
+            user = self.sheets_manager.get_user_by_telegram_id(user_id)
+            
+            if user:
+                # Обновляем данные существующего пользователя
+                result = self.sheets_manager.update_user(user['id'], user_data)
+                if result:
+                    logger.info(f"Информация о пользователе обновлена: {user_id}")
+                    return True
+                else:
+                    logger.warning(f"Не удалось обновить информацию о пользователе: {user_id}")
+                    return False
+            else:
+                # Создаем нового пользователя
+                new_user = self.sheets_manager.add_user(
+                    telegram_id=str(user_id),
+                    username=user_data.get('username', ''),
+                    first_name=user_data.get('first_name', ''),
+                    last_name=user_data.get('last_name', '')
+                )
+                
+                if new_user:
+                    logger.info(f"Создан новый пользователь: {user_id}")
+                    return True
+                else:
+                    logger.warning(f"Не удалось создать пользователя: {user_id}")
+                    return False
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении информации о пользователе: {e}")
+            return False
+            
+    def set_feedback_bonus(self, user_id: int, used: bool = False) -> bool:
+        """
+        Устанавливает статус бонусного запроса для пользователя.
+        
+        Args:
+            user_id: ID пользователя в Telegram
+            used: True если бонус использован, False если доступен для использования
+            
+        Returns:
+            True при успешном обновлении, False при ошибке
+        """
+        try:
+            if not self.use_sheets or not self.sheets_manager:
+                logger.warning("Google Sheets недоступен для установки бонуса")
+                return False
+                
+            # Получаем пользователя по telegram_id
+            user = self.sheets_manager.get_user_by_telegram_id(user_id)
+            
+            if not user:
+                logger.warning(f"Пользователь не найден для установки бонуса: {user_id}")
+                return False
+                
+            # Получаем активную сессию для пользователя
+            active_session = self.sheets_manager.get_active_session_for_user(user['id'])
+            
+            if active_session:
+                # Обновляем данные сессии
+                session_data = {
+                    'has_feedback_bonus': True,
+                    'feedback_bonus_used': used
+                }
+                
+                result = self.sheets_manager.update_session(active_session['id'], session_data)
+                if result:
+                    logger.info(f"Бонус обратной связи установлен для пользователя {user_id}: использован={used}")
+                    return True
+            
+            # Если нет активной сессии, обновляем данные пользователя
+            user_data = {
+                'has_feedback_bonus': True,
+                'feedback_bonus_used': used
+            }
+            
+            result = self.sheets_manager.update_user(user['id'], user_data)
+            if result:
+                logger.info(f"Бонус обратной связи установлен через данные пользователя {user_id}: использован={used}")
+                return True
+                
+            logger.warning(f"Не удалось установить бонус обратной связи для пользователя: {user_id}")
+            return False
+        except Exception as e:
+            logger.error(f"Ошибка при установке бонуса обратной связи: {e}")
+            return False
 
     def create_session(self, user_id: int, initial_data: Optional[Dict[str, Any]] = None) -> None:
         """
