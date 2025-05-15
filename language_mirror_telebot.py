@@ -130,12 +130,10 @@ LANGUAGE_LEVELS = {
 user_sessions = {}  # Основной словарь сессий
 feedback_pending = {}  # Ожидание обратной связи
 user_feedback_data = {}  # Данные обратной связи для администратора
-inline_admin_markup = None  # Клавиатура для админа
 
 # Глобальные переменные для хранения менеджера сессий
 session_manager = None
 sheets_manager = None
-user_sessions = {}
 
 # Импортируем менеджер сессий с поддержкой Google Sheets
 try:
@@ -328,13 +326,7 @@ def handle_start(message):
         markup.add(admin_button)
         logger.info(f"Добавлена кнопка администратора для пользователя {username}")
         
-        # Создаем инлайн-клавиатуру для администратора
-        inline_admin_markup = types.InlineKeyboardMarkup()
-        admin_feedback_button = types.InlineKeyboardButton(
-            "📊 Получить отчет по обратной связи", 
-            callback_data="show_admin_feedback"
-        )
-        inline_admin_markup.add(admin_feedback_button)
+        # Эта инлайн-клавиатура создаётся непосредственно перед отправкой сообщения
         
     # Формируем приветственное сообщение
     welcome_text = f"Hello {user_name}! 👋\n\n"
@@ -359,7 +351,16 @@ def handle_start(message):
     # Если администратор, отправляем дополнительное сообщение с инлайн-кнопкой
     if is_admin:
         admin_message = "👨‍💼 *Панель администратора*\n\nВы авторизованы как администратор. Используйте кнопку ниже для доступа к отчетам."
-        bot.send_message(message.chat.id, admin_message, parse_mode="Markdown", reply_markup=inline_admin_markup)
+        
+        # Создаем инлайн-клавиатуру прямо здесь для устранения ошибки
+        admin_inline_markup = types.InlineKeyboardMarkup()
+        admin_feedback_button = types.InlineKeyboardButton(
+            "📊 Получить отчет по обратной связи", 
+            callback_data="show_admin_feedback"
+        )
+        admin_inline_markup.add(admin_feedback_button)
+        
+        bot.send_message(message.chat.id, admin_message, parse_mode="Markdown", reply_markup=admin_inline_markup)
     
     # Обновляем пользователя в базе данных или создаем нового
     try:
