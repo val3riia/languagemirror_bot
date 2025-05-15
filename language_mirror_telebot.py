@@ -1598,6 +1598,7 @@ def handle_admin_feedback(message):
                 
                 # Удаляем временный файл после отправки
                 try:
+                    import os
                     os.remove(excel_path)
                     logger.info(f"Временный Excel-файл удален: {excel_path}")
                 except Exception as e:
