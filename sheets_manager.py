@@ -94,7 +94,33 @@ class SheetsManager:
         try:
             logger.info(f"Проверка аутентификации в Google Sheets. GOOGLE_SHEETS_KEY: {'Установлен' if self.spreadsheet_key else 'Отсутствует'}")
             
-            # Используем файл с учетными данными
+            # Сначала пробуем использовать JSON из переменной окружения
+            google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
+            if google_creds_json:
+                logger.info("Используем переменную окружения GOOGLE_SERVICE_ACCOUNT_JSON для аутентификации")
+                try:
+                    # Парсим JSON из переменной
+                    creds_dict = json.loads(google_creds_json)
+                    logger.info("JSON из переменной окружения успешно разобран")
+                    
+                    # Создаем учетные данные напрямую из словаря
+                    credentials = ServiceAccountCredentials.from_service_account_info(
+                        creds_dict, ",".join(SHEETS_API_SCOPES)
+                    )
+                    self.client = gspread.authorize(credentials)
+                    
+                    logger.info("Аутентификация через переменную окружения успешна")
+                    return
+                except json.JSONDecodeError as e:
+                    logger.error(f"Ошибка при разборе JSON из переменной GOOGLE_SERVICE_ACCOUNT_JSON: {e}")
+                    if len(google_creds_json) > 20:
+                        logger.debug(f"Начало JSON: {google_creds_json[:20]}...")
+                    # Продолжаем и пробуем файл, если переменная не содержит валидный JSON
+                except Exception as e:
+                    logger.error(f"Ошибка аутентификации через переменную окружения: {e}")
+                    # Продолжаем и пробуем файл если не получилось через переменную
+            
+            # Если переменной нет или она не сработала, пробуем файл (для разработки)
             if self.credentials_path and os.path.isfile(self.credentials_path):
                 logger.info(f"Используем файл для аутентификации: {self.credentials_path}")
                 try:
@@ -119,9 +145,9 @@ class SheetsManager:
                     logger.error(f"Ошибка аутентификации через файл: {e}")
                     raise
             
-            # Если дошли до этой точки, значит не нашли файл или не смогли аутентифицироваться
-            logger.error("Ошибка аутентификации: файл не найден или не доступен")
-            raise Exception("Ошибка аутентификации Google Sheets: не найден файл учетных данных")
+            # Если дошли до этой точки, значит не смогли аутентифицироваться ни через переменную, ни через файл
+            logger.error("Ошибка аутентификации: не найдены действительные учетные данные")
+            raise Exception("Ошибка аутентификации Google Sheets: не найдены действительные учетные данные")
                 
         except Exception as e:
             logger.error(f"Ошибка аутентификации в Google Sheets API: {e}")
