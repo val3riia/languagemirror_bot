@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 import gspread
 from gspread.exceptions import APIError, SpreadsheetNotFound, WorksheetNotFound
-from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
 
 # Настройка логирования
 logging.basicConfig(
@@ -100,12 +100,20 @@ class SheetsManager:
                 logger.info("Используем переменную окружения GOOGLE_SERVICE_ACCOUNT_JSON для аутентификации")
                 try:
                     # Парсим JSON из переменной
-                    creds_dict = json.loads(google_creds_json)
-                    logger.info("JSON из переменной окружения успешно разобран")
+                    # Может содержать экранированные кавычки или двойные кавычки
+                    # Попробуем разобрать как есть, а затем, если не получится, применим другие подходы
+                    try:
+                        creds_dict = json.loads(google_creds_json)
+                        logger.info("JSON из переменной окружения успешно разобран")
+                    except json.JSONDecodeError as e:
+                        # Попробуем исправить проблемы с экранированием
+                        google_creds_json = google_creds_json.replace('\\"', '"').replace("\\'", "'")
+                        creds_dict = json.loads(google_creds_json) 
+                        logger.info("JSON из переменной окружения успешно разобран после исправления экранирования")
                     
-                    # Создаем учетные данные напрямую из словаря
-                    credentials = ServiceAccountCredentials.from_service_account_info(
-                        creds_dict, ",".join(SHEETS_API_SCOPES)
+                    # Создаем учетные данные напрямую из словаря, используя новый API google.oauth2
+                    credentials = Credentials.from_service_account_info(
+                        creds_dict, scopes=SHEETS_API_SCOPES
                     )
                     self.client = gspread.authorize(credentials)
                     
@@ -133,9 +141,9 @@ class SheetsManager:
                         creds_content = f.read()
                         logger.info(f"Размер файла учетных данных: {len(creds_content)} байт")
                     
-                    # Создаем учетные данные - исправляем ошибки типов
-                    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                        abs_path, ",".join(SHEETS_API_SCOPES)
+                    # Создаем учетные данные - используя google.oauth2 библиотеку
+                    credentials = Credentials.from_service_account_file(
+                        abs_path, scopes=SHEETS_API_SCOPES
                     )
                     self.client = gspread.authorize(credentials)
                     
