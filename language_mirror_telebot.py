@@ -317,10 +317,18 @@ def handle_start(message):
         logger.info(f"DEBUG: username={username}, user_id={user_id}, is_admin={is_admin}, admin_users={ADMIN_USERS}")
     
     if is_admin:
-        # Добавляем кнопку администратора
+        # Добавляем кнопку администратора в обычную клавиатуру
         admin_button = types.KeyboardButton('/admin_feedback')
         markup.add(admin_button)
         logger.info(f"Добавлена кнопка администратора для пользователя {username}")
+        
+        # Создаем инлайн-клавиатуру для администратора
+        inline_admin_markup = types.InlineKeyboardMarkup()
+        admin_feedback_button = types.InlineKeyboardButton(
+            "📊 Получить отчет по обратной связи", 
+            callback_data="show_admin_feedback"
+        )
+        inline_admin_markup.add(admin_feedback_button)
         
     # Формируем приветственное сообщение
     welcome_text = f"Hello {user_name}! 👋\n\n"
@@ -341,6 +349,11 @@ def handle_start(message):
     
     # Отправляем сообщение
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
+    
+    # Если администратор, отправляем дополнительное сообщение с инлайн-кнопкой
+    if is_admin:
+        admin_message = "👨‍💼 *Панель администратора*\n\nВы авторизованы как администратор. Используйте кнопку ниже для доступа к отчетам."
+        bot.send_message(message.chat.id, admin_message, parse_mode="Markdown", reply_markup=inline_admin_markup)
     
     # Обновляем пользователя в базе данных или создаем нового
     try:
@@ -1752,7 +1765,7 @@ def create_empty_report(chat_id):
 
 
 # Обработчик для административных callback-запросов
-@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_'))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('admin_') or call.data == 'show_admin_feedback')
 def handle_admin_callback(call):
     """Обрабатывает callback-запросы от кнопок в админ-функциях."""
     
