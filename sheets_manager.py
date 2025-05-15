@@ -48,16 +48,23 @@ class SheetsManager:
         # Настройка подключения
         self.spreadsheet_key = spreadsheet_key or os.environ.get("GOOGLE_SHEETS_KEY")
         
-        # Определение пути к файлу учетных данных
-        default_creds_path = os.path.join(os.getcwd(), "credentials/google_service_account.json") 
-        env_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
-        self.credentials_path = credentials_path or env_creds_path or default_creds_path
+        # Приоритет теперь у учетных данных из переменной окружения
+        self.credentials_path = None  # По умолчанию нет пути к файлу
+        self.google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
         
-        # Логирование для отладки
-        if self.credentials_path:
-            abs_path = os.path.abspath(self.credentials_path)
-            exists = os.path.isfile(abs_path)
-            logger.info(f"Абсолютный путь к учетным данным: {abs_path} (файл существует: {exists})")
+        # Если в переменной окружения ничего нет, попробуем найти файл
+        if not self.google_creds_json:
+            env_creds_path = os.environ.get("GOOGLE_CREDENTIALS_PATH")
+            default_creds_path = os.path.join(os.getcwd(), "credentials/google_service_account.json")
+            self.credentials_path = credentials_path or env_creds_path or default_creds_path
+            
+            # Логирование для отладки файла
+            if self.credentials_path:
+                abs_path = os.path.abspath(self.credentials_path)
+                exists = os.path.isfile(abs_path)
+                logger.info(f"Проверка файла учетных данных: {abs_path} (файл существует: {exists})")
+        else:
+            logger.info("Найдены учетные данные в переменной GOOGLE_SERVICE_ACCOUNT_JSON")
         
         self.retry_limit = retry_limit
         self.retry_delay = retry_delay
@@ -69,17 +76,12 @@ class SheetsManager:
             logger.warning("GOOGLE_SHEETS_KEY не задан в переменных окружения")
             return
 
-        # Проверяем наличие файла учетных данных
-        if not self.credentials_path or not os.path.exists(self.credentials_path):
-            logger.warning(f"Файл с учетными данными сервисного аккаунта не найден: {self.credentials_path}")
-            
-            # Проверяем наличие переменной среды GOOGLE_SERVICE_ACCOUNT_JSON только если файл отсутствует
-            google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-            if not google_creds_json:
-                logger.warning("Ни файл учетных данных, ни GOOGLE_SERVICE_ACCOUNT_JSON не найдены")
-                return
-            
-            logger.info("Файл не найден, но обнаружен GOOGLE_SERVICE_ACCOUNT_JSON в переменных окружения")
+        # Проверяем наличие учетных данных
+        if not self.google_creds_json and (not self.credentials_path or not os.path.exists(self.credentials_path)):
+            logger.warning("Не найдены учетные данные для Google Sheets ни в переменных окружения, ни в файле")
+            return
+        
+        logger.info("Учетные данные для Google Sheets найдены")
 
         try:
             # Аутентификация и подключение
@@ -95,9 +97,51 @@ class SheetsManager:
         try:
             logger.info(f"Проверка аутентификации в Google Sheets. GOOGLE_SHEETS_KEY: {'Установлен' if self.spreadsheet_key else 'Отсутствует'}")
             
-            # Приоритет 1: Используем файл с учетными данными
+            # Приоритет 1: Используем JSON из переменной окружения
+            if self.google_creds_json:
+                logger.info("Приоритет аутентификации: использование GOOGLE_SERVICE_ACCOUNT_JSON")
+                
+                # Проверяем, корректный ли JSON
+                try:
+                    import json
+                    from tempfile import NamedTemporaryFile
+                    
+                    json_obj = json.loads(self.google_creds_json)
+                    json_str = json.dumps(json_obj)
+                    logger.info("JSON в переменной GOOGLE_SERVICE_ACCOUNT_JSON успешно разобран")
+                    
+                    # Создаем временный файл для учетных данных
+                    with NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp:
+                        temp.write(json_str)
+                        temp_creds_path = temp.name
+                        logger.info(f"Временный файл учетных данных создан: {temp_creds_path}")
+                    
+                    try:
+                        credentials = ServiceAccountCredentials.from_json_keyfile_name(
+                            temp_creds_path, SHEETS_API_SCOPES
+                        )
+                        self.client = gspread.authorize(credentials)
+                        logger.info("Аутентификация через GOOGLE_SERVICE_ACCOUNT_JSON успешна")
+                        return  # Успешная аутентификация
+                    finally:
+                        # Удаляем временный файл
+                        if os.path.exists(temp_creds_path):
+                            os.unlink(temp_creds_path)
+                            logger.info("Временный файл учетных данных удален")
+                
+                except json.JSONDecodeError:
+                    logger.error("Переменная среды GOOGLE_SERVICE_ACCOUNT_JSON содержит невалидный JSON")
+                    if len(self.google_creds_json) > 0:
+                        logger.debug(f"Первые 10 символов: {self.google_creds_json[:10]}...")
+                    # Продолжаем и пробуем файл, если он есть
+                
+                except Exception as e:
+                    logger.error(f"Ошибка аутентификации через переменную среды: {e}")
+                    # Продолжаем и пробуем файл, если он есть
+            
+            # Приоритет 2: Используем файл с учетными данными
             if self.credentials_path and os.path.isfile(self.credentials_path):
-                logger.info(f"Используем аутентификацию из файла: {self.credentials_path}")
+                logger.info(f"Приоритет аутентификации: использование файла {self.credentials_path}")
                 try:
                     credentials = ServiceAccountCredentials.from_json_keyfile_name(
                         self.credentials_path, SHEETS_API_SCOPES
@@ -107,53 +151,11 @@ class SheetsManager:
                     return
                 except Exception as e:
                     logger.error(f"Ошибка аутентификации через файл: {e}")
-                    # Продолжим и попробуем использовать переменную окружения
+                    raise
             
-            # Приоритет 2: Используем JSON из переменной окружения
-            google_creds_json = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON")
-            
-            if not google_creds_json:
-                logger.error("Не найдены доступные учетные данные для Google Sheets")
-                raise Exception("Отсутствуют учетные данные Google Sheets")
-            
-            logger.info("Используем аутентификацию из GOOGLE_SERVICE_ACCOUNT_JSON")
-            
-            # Проверяем, корректный ли JSON
-            try:
-                import json
-                from tempfile import NamedTemporaryFile
-                
-                json_obj = json.loads(google_creds_json)
-                google_creds_json = json.dumps(json_obj)
-                logger.info("JSON ключа сервисного аккаунта успешно разобран")
-                
-                # Создаем временный файл для учетных данных
-                with NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp:
-                    temp.write(google_creds_json)
-                    temp_creds_path = temp.name
-                    logger.info(f"Временный файл учетных данных создан: {temp_creds_path}")
-                
-                try:
-                    credentials = ServiceAccountCredentials.from_json_keyfile_name(
-                        temp_creds_path, SHEETS_API_SCOPES
-                    )
-                    self.client = gspread.authorize(credentials)
-                    logger.info("Аутентификация через GOOGLE_SERVICE_ACCOUNT_JSON успешна")
-                finally:
-                    # Удаляем временный файл
-                    if os.path.exists(temp_creds_path):
-                        os.unlink(temp_creds_path)
-                        logger.info("Временный файл учетных данных удален")
-            
-            except json.JSONDecodeError:
-                logger.error("Переменная среды GOOGLE_SERVICE_ACCOUNT_JSON содержит невалидный JSON")
-                if len(google_creds_json) > 0:
-                    logger.debug(f"Первые 10 символов: {google_creds_json[:10]}...")
-                raise Exception("Невалидный JSON в GOOGLE_SERVICE_ACCOUNT_JSON")
-            
-            except Exception as e:
-                logger.error(f"Ошибка аутентификации в Google Sheets API: {e}")
-                raise
+            # Если дошли до этой точки, значит ни один из способов не сработал
+            logger.error("Не удалось аутентифицироваться ни через переменную среды, ни через файл")
+            raise Exception("Ошибка аутентификации Google Sheets: не найдены действительные учетные данные")
                 
         except Exception as e:
             logger.error(f"Ошибка аутентификации в Google Sheets API: {e}")
