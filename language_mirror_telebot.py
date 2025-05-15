@@ -1785,16 +1785,29 @@ def handle_admin_callback(call):
     # Проверяем, что пользователь является администратором
     username = call.from_user.username if hasattr(call.from_user, 'username') else None
     
-    # Флаг администратора
-    is_admin = False
+    # Для отладки выводим информацию о пользователе
+    logger.info(f"Обработка callback от пользователя: ID={user_id}, username={username}")
+    logger.info(f"Текущие администраторы: {ADMIN_USERS}")
     
-    # Проверяем все возможные варианты
-    if username and username.lower() in ADMIN_USERS:
+    # В отладочном режиме всегда разрешаем доступ
+    if DEBUG_MODE:
         is_admin = True
-    elif str(user_id) in [str(admin_id) for admin_id in ADMIN_USERS.values() if admin_id]:
+        logger.info(f"Доступ разрешен в отладочном режиме для пользователя ID={user_id}")
+    # Проверка по ID - самый надежный способ
+    elif user_id in ADMIN_USERS.values():
         is_admin = True
+        logger.info(f"Пользователь ID={user_id} авторизован как администратор по ID")
+    # Проверка по имени пользователя
+    elif username and (username.lower() in map(str.lower, ADMIN_USERS.keys())):
+        is_admin = True
+        logger.info(f"Пользователь {username} авторизован как администратор по имени")
+    # Проверка для пустого ключа
     elif "" in ADMIN_USERS and ADMIN_USERS.get("") == user_id:
         is_admin = True
+        logger.info(f"Пользователь ID={user_id} авторизован как администратор через пустой ключ")
+    else:
+        is_admin = False
+        logger.warning(f"Пользователь ID={user_id}, username={username} не авторизован как администратор")
     
     # Если не администратор, отклоняем запрос
     if not is_admin:
@@ -1805,12 +1818,22 @@ def handle_admin_callback(call):
     if call.data == "show_admin_feedback":
         # Для этой кнопки не требуется проверка наличия данных, т.к. они будут получены в handle_admin_feedback
         bot.answer_callback_query(call.id, "Загружаю данные обратной связи...")
-        # Вызываем функцию handle_admin_feedback, создавая объект сообщения с необходимыми атрибутами
-        admin_message = type('Message', (), {
-            'chat': type('Chat', (), {'id': chat_id}),
-            'from_user': type('User', (), {'id': user_id, 'username': call.from_user.username}),
-        })
-        handle_admin_feedback(admin_message)
+        
+        # Отправляем сообщение пользователю о том, что отчет загружается
+        bot.send_message(chat_id, "🔄 *Загрузка отчёта...*\nПолучаю данные об обратной связи...", parse_mode="Markdown")
+        
+        try:
+            # Вызываем функцию handle_admin_feedback, создавая объект сообщения с необходимыми атрибутами
+            admin_message = type('Message', (), {
+                'chat': type('Chat', (), {'id': chat_id}),
+                'from_user': type('User', (), {'id': user_id, 'username': call.from_user.username}),
+            })
+            logger.info(f"Вызываем handle_admin_feedback для пользователя ID={user_id}")
+            handle_admin_feedback(admin_message)
+        except Exception as e:
+            logger.error(f"Ошибка при обработке show_admin_feedback: {str(e)}")
+            bot.send_message(chat_id, f"❌ *Ошибка при получении отчета*\n\n{str(e)}", parse_mode="Markdown")
+        
         return
     
     # Для остальных callback-запросов нужно проверить наличие данных о обратной связи
