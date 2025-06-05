@@ -717,49 +717,9 @@ def handle_feedback(call):
     # Сохраняем обратную связь в лог
     logger.info(f"User {user_id} gave feedback: {rating_map.get(feedback_type)}")
     
-    # Сохраняем пользователя и предварительную обратную связь в Google Sheets
-    try:
-        from sheets_session_manager import get_session_manager
-        session_manager = get_session_manager()
-        
-        if session_manager and session_manager.sheets_manager:
-            # Получаем информацию о пользователе
-            username = call.from_user.username or ""
-            first_name = call.from_user.first_name or ""
-            last_name = call.from_user.last_name or ""
-            
-            # Проверяем, существует ли пользователь в базе данных
-            user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
-            if not user_data:
-                # Создаем пользователя, если его нет
-                user_data = session_manager.sheets_manager.create_user(
-                    telegram_id=user_id,
-                    username=username,
-                    first_name=first_name,
-                    last_name=last_name
-                )
-                logger.info(f"Создан новый пользователь для обратной связи: {username} (ID: {user_id})")
-            
-            # Сохраняем обратную связь с числовой оценкой
-            rating_numeric_map = {
-                "helpful": 5,
-                "okay": 3,
-                "not_helpful": 1
-            }
-            
-            if user_data:
-                # Добавляем обратную связь в Google Sheets
-                feedback_data = session_manager.sheets_manager.add_feedback(
-                    user_id=user_data['id'],
-                    rating=rating_numeric_map.get(feedback_type, 3),
-                    comment="",  # Комментарий будет добавлен позже
-                    session_id=None
-                )
-                logger.info(f"Обратная связь сохранена в Google Sheets для пользователя {user_id}")
-        else:
-            logger.warning("Google Sheets недоступен, обратная связь не сохранена")
-    except Exception as e:
-        logger.error(f"Ошибка при сохранении обратной связи в Google Sheets: {str(e)}")
+    # Сохраняем только тип обратной связи для последующего использования
+    # Фактическое сохранение в Google Sheets произойдет только при добавлении комментария
+    logger.info(f"Сохраняем тип обратной связи {feedback_type} для последующего сохранения")
     
     # Запрашиваем дополнительный комментарий
     bot.edit_message_text(
@@ -858,120 +818,72 @@ def handle_feedback_comment(message):
     }
     
     # Сохраняем обратную связь в Google Sheets
-    try:
-        # Минимальное количество слов для бонуса
-        min_words_for_bonus = int(os.environ.get("FEEDBACK_COMMENT_MIN_WORDS", "3"))
-        
-        # Получаем информацию о пользователе
-        username = message.from_user.username or ""
-        first_name = message.from_user.first_name or ""
-        last_name = message.from_user.last_name or ""
-        
-        # Сохраняем обратную связь в Google Sheets
-        if 'sheets_manager' in globals() and sheets_manager:
-            # Выполняем в отдельном потоке, чтобы не блокировать бота
-            def save_to_sheets():
-                try:
-                    # Получаем пользователя или создаем нового
-                    from sheets_manager import get_sheets_manager
-                    sheets_manager = get_sheets_manager()
+    def save_to_sheets():
+        try:
+            from sheets_session_manager import get_session_manager
+            session_manager = get_session_manager()
+            
+            if session_manager and session_manager.sheets_manager:
+                # Получаем информацию о пользователе
+                username = message.from_user.username or ""
+                first_name = message.from_user.first_name or ""
+                last_name = message.from_user.last_name or ""
+                
+                # Получаем пользователя или создаем нового
+                sheet_user = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+                if not sheet_user:
+                    sheet_user = session_manager.sheets_manager.create_user(
+                        telegram_id=user_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name
+                    )
+                    logger.info(f"Создан новый пользователь: {username} (ID: {user_id})")
                     
-                    if sheets_manager:
-                        # Получаем пользователя или создаем нового
-                        sheet_user = sheets_manager.get_user_by_telegram_id(user_id)
-                        if not sheet_user:
-                            sheet_user = sheets_manager.create_user(
-                                telegram_id=user_id,
-                                username=username,
-                                first_name=first_name,
-                                last_name=last_name
-                            )
-                            
-                        # Преобразуем rating в числовую оценку
-                        rating_value = {
-                            "helpful": 5,
-                            "okay": 3,
-                            "not_helpful": 1,
-                            "unknown": 3
-                        }.get(feedback_type, 3)
-                        
-                        # Добавляем запись обратной связи в Google Sheets
-                        sheets_manager.add_feedback(
-                            user_id=sheet_user["id"],
-                            rating=rating_value,
-                            comment=comment
-                        )
+                # Преобразуем rating в числовую оценку
+                rating_value = {
+                    "helpful": 5,
+                    "okay": 3,
+                    "not_helpful": 1,
+                    "unknown": 3
+                }.get(feedback_type, 3)
+                
+                # Добавляем запись обратной связи в Google Sheets
+                if sheet_user and isinstance(sheet_user, dict) and 'id' in sheet_user:
+                    feedback_result = session_manager.sheets_manager.add_feedback(
+                        user_id=int(sheet_user["id"]),
+                        rating=rating_value,
+                        comment=comment
+                    )
+                    logger.info(f"Обратная связь сохранена: пользователь {user_id}, оценка {rating_value}")
                     
-                    # Минимальное количество слов для получения бонуса
+                    # Проверяем бонус за детальные комментарии
+                    words = comment.split()
                     min_words_for_bonus = 3
                     
-                    # Проверяем, содержит ли комментарий минимум слов для предоставления бонуса
-                    words = comment.split()
-                    logger.info(f"Комментарий содержит {len(words)} слов (минимум для бонуса: {min_words_for_bonus})")
-                    
                     if len(words) >= min_words_for_bonus:
-                        # Устанавливаем бонус через специальный метод в session_manager
-                        try:
-                            bonus_set = False
-                            
-                            # Используем set_feedback_bonus в session_manager, если метод доступен
-                            if session_manager and hasattr(session_manager, 'set_feedback_bonus'):
-                                bonus_set = session_manager.set_feedback_bonus(user_id, False)  # False = бонус доступен
-                                if bonus_set:
-                                    logger.info(f"Бонус обратной связи установлен через session_manager для пользователя {user_id}")
-                            
-                            # Если через session_manager не получилось, пробуем напрямую через sheets_manager
-                            if not bonus_set and sheets_manager:
-                                # Получаем пользователя
-                                sheet_user = sheets_manager.get_user_by_telegram_id(user_id)
-                                if sheet_user:
-                                    # Получаем активную сессию
-                                    active_session = sheets_manager.get_active_session_for_user(sheet_user.get('id'))
-                                    
-                                    # Обновляем данные сессии или пользователя
-                                    session_data = {
-                                        "has_feedback_bonus": True,
-                                        "feedback_bonus_used": False
-                                    }
-                                    
-                                    if active_session:
-                                        sheets_manager.update_session(active_session.get('id'), session_data)
-                                    else:
-                                        sheets_manager.update_user(sheet_user.get('id'), session_data)
-                                        
-                                    logger.info(f"Бонус обратной связи установлен через sheets_manager для пользователя {user_id}")
-                                    bonus_set = True
-                                    
-                            if not bonus_set:
-                                logger.warning(f"Не удалось установить бонус обратной связи для пользователя {user_id}")
-                        except Exception as e:
-                            logger.error(f"Ошибка при установке бонуса: {e}")
-                            
                         # Отправляем уведомление о бонусном запросе
                         bot.send_message(
                             user_id,
                             "🎁 Thank you for your detailed feedback! You've received a bonus article request. "
                             "Use /discussion to use it anytime today!"
                         )
-                        return True
                     else:
                         bot.send_message(
                             user_id,
                             "Thank you for your feedback! For more detailed comments (at least 3 words) "
                             "you can receive bonus article requests in the future."
                         )
-                        return False
-                except Exception as e:
-                    logger.error(f"Ошибка при сохранении обратной связи в Google Sheets: {str(e)}")
-                    return False
-            
-            # Запускаем функцию сохранения в отдельном потоке
-            threading.Thread(target=save_to_sheets, daemon=True).start()
-        else:
-            # Если Google Sheets недоступен, сохраняем только в логи
-            logger.warning(f"Google Sheets недоступен, обратная связь только логируется: {user_id}, {feedback_type}, {comment}")
-    except Exception as e:
-        logger.error("Error saving feedback to database")
+                else:
+                    logger.error(f"Не удалось получить данные пользователя для ID {user_id}")
+            else:
+                logger.warning("Google Sheets недоступен для сохранения обратной связи")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении обратной связи: {str(e)}")
+    
+    # Запускаем сохранение в отдельном потоке
+    import threading
+    threading.Thread(target=save_to_sheets, daemon=True).start()
     
     # В любом случае логируем обратную связь
     logger.info(f"User {user_id} feedback {rating_map.get(feedback_type)} with comment: {comment}")
