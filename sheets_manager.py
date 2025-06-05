@@ -367,7 +367,7 @@ class SheetsManager:
             logger.error(f"Ошибка при обновлении статуса бонуса пользователя: {e}")
             return False
             
-    def update_user_discussion_stats(self, telegram_id: int, date: str) -> bool:
+    def update_user_articles_stats(self, telegram_id: int, date: str) -> bool:
         """
         Обновляет статистику использования запросов пользователя.
         

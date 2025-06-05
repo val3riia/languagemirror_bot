@@ -338,7 +338,7 @@ def handle_start(message):
     welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n\n"
     welcome_text += "🔹 Main Commands:\n\n"
     welcome_text += "• /start - show this welcome message\n"
-    welcome_text += "• /discussion - start an English conversation or get article recommendations (1 request per day)\n"
+    welcome_text += "• /articles - find English articles for reading practice (1 request per day)\n"
     welcome_text += "• /stop_discussion - end the current conversation\n\n"
     welcome_text += "💡 Tip: Provide feedback after conversations to receive a bonus article request!\n\n"
     welcome_text += "Use the buttons below or type a command to get started!"
@@ -420,7 +420,7 @@ def handle_discussion(message):
                 active_session = True
                 bot.send_message(
                     chat_id,
-                    "Вы уже ведете обсуждение со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
+                    "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
                 )
                 logger.info(f"Пользователь {username} (ID: {user_id}) уже имеет активную сессию")
                 return
@@ -432,7 +432,7 @@ def handle_discussion(message):
             active_session = True
             bot.send_message(
                 chat_id,
-                "Вы уже ведете обсуждение со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
+                "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
             )
             return
     
@@ -477,8 +477,8 @@ def handle_discussion(message):
                 
                 if user_data:
                     # Проверяем дату последнего обсуждения
-                    if user_data.get('last_discussion_date') == str(today):
-                        if user_data.get('discussions_count', 0) >= 3:
+                    if user_data.get('last_articles_date') == str(today):
+                        if user_data.get('articles_count', 0) >= 3:
                             bot.send_message(
                                 chat_id,
                                 "Вы достигли лимита запросов на сегодня. Попробуйте завтра или оставьте обратную связь с помощью /feedback, чтобы получить бонусные запросы."
@@ -539,7 +539,7 @@ def handle_discussion(message):
     if session_manager and session_manager.sheets_manager and not the_is_admin:
         try:
             # Обновляем статистику использования в Google Sheets
-            session_manager.sheets_manager.update_user_discussion_stats(
+            session_manager.sheets_manager.update_user_articles_stats(
                 telegram_id=user_id,
                 date=str(the_today)
             )
