@@ -265,12 +265,12 @@ def handle_start(message):
     # Создаем клавиатуру с командами
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     start_button = types.KeyboardButton('/start')
-    discussion_button = types.KeyboardButton('/discussion')
+    articles_button = types.KeyboardButton('/articles')
     stop_button = types.KeyboardButton('/stop_discussion')
     
     # Добавляем основные кнопки
     markup.add(start_button)
-    markup.add(discussion_button, stop_button)
+    markup.add(articles_button, stop_button)
     
     # Проверяем, является ли пользователь администратором
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
@@ -385,9 +385,9 @@ def handle_start(message):
     except Exception as e:
         logger.error(f"Error updating user info: {str(e)}")
 
-@bot.message_handler(commands=['discussion'])
+@bot.message_handler(commands=['articles', 'discussion'])
 def handle_discussion(message):
-    """Обрабатывает команду /discussion."""
+    """Обрабатывает команду /articles для поиска статей."""
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
     
@@ -407,7 +407,7 @@ def handle_discussion(message):
     chat_id = message.chat.id
     username = message.from_user.username if hasattr(message.from_user, 'username') else ""
     
-    logger.info(f"Обработка команды /discussion от пользователя {username} (ID: {user_id})")
+    logger.info(f"Обработка команды /articles от пользователя {username} (ID: {user_id})")
     
     # Проверяем, есть ли у пользователя активная сессия
     active_session = False
