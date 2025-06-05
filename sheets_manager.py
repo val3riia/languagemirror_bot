@@ -403,22 +403,22 @@ class SheetsManager:
             row = cell.row
             
             # Получаем текущие значения
-            last_discussion_date = worksheet.cell(row, 5).value  # Предполагаем, что столбец E
-            discussions_count = worksheet.cell(row, 6).value  # Предполагаем, что столбец F
+            last_articles_date = worksheet.cell(row, 5).value  # Предполагаем, что столбец E
+            articles_count = worksheet.cell(row, 6).value  # Предполагаем, что столбец F
             
             # Обновляем значения
-            if last_discussion_date == date:
+            if last_articles_date == date:
                 # Если это тот же день, увеличиваем счетчик
-                discussions_count = int(discussions_count or 0) + 1
+                articles_count = int(articles_count or 0) + 1
             else:
                 # Если новый день, сбрасываем счетчик
-                discussions_count = 1
+                articles_count = 1
                 
             # Обновляем данные в таблице
-            worksheet.update_cell(row, 5, date)  # Дата последнего обсуждения
-            worksheet.update_cell(row, 6, discussions_count)  # Количество обсуждений
+            worksheet.update_cell(row, 5, date)  # Дата последнего запроса статей
+            worksheet.update_cell(row, 6, articles_count)  # Количество запросов статей
             
-            logger.info(f"Статистика пользователя {telegram_id} успешно обновлена: {date}, {discussions_count}")
+            logger.info(f"Статистика пользователя {telegram_id} успешно обновлена: {date}, {articles_count}")
             return True
             
         except Exception as e:
