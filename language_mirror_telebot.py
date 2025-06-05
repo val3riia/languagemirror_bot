@@ -717,6 +717,50 @@ def handle_feedback(call):
     # Сохраняем обратную связь в лог
     logger.info(f"User {user_id} gave feedback: {rating_map.get(feedback_type)}")
     
+    # Сохраняем пользователя и предварительную обратную связь в Google Sheets
+    try:
+        from sheets_session_manager import get_session_manager
+        session_manager = get_session_manager()
+        
+        if session_manager and session_manager.sheets_manager:
+            # Получаем информацию о пользователе
+            username = call.from_user.username or ""
+            first_name = call.from_user.first_name or ""
+            last_name = call.from_user.last_name or ""
+            
+            # Проверяем, существует ли пользователь в базе данных
+            user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+            if not user_data:
+                # Создаем пользователя, если его нет
+                user_data = session_manager.sheets_manager.create_user(
+                    telegram_id=user_id,
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name
+                )
+                logger.info(f"Создан новый пользователь для обратной связи: {username} (ID: {user_id})")
+            
+            # Сохраняем обратную связь с числовой оценкой
+            rating_numeric_map = {
+                "helpful": 5,
+                "okay": 3,
+                "not_helpful": 1
+            }
+            
+            if user_data:
+                # Добавляем обратную связь в Google Sheets
+                feedback_data = session_manager.sheets_manager.add_feedback(
+                    user_id=user_data['id'],
+                    rating=rating_numeric_map.get(feedback_type, 3),
+                    comment="",  # Комментарий будет добавлен позже
+                    session_id=None
+                )
+                logger.info(f"Обратная связь сохранена в Google Sheets для пользователя {user_id}")
+        else:
+            logger.warning("Google Sheets недоступен, обратная связь не сохранена")
+    except Exception as e:
+        logger.error(f"Ошибка при сохранении обратной связи в Google Sheets: {str(e)}")
+    
     # Запрашиваем дополнительный комментарий
     bot.edit_message_text(
         chat_id=call.message.chat.id,
