@@ -280,6 +280,48 @@ class SheetsManager:
             logger.error(f"Ошибка при получении пользователя по telegram_id: {e}")
             return None
 
+    def get_user_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
+        """
+        Получает пользователя по внутреннему ID.
+        
+        Args:
+            user_id: Внутренний ID пользователя
+            
+        Returns:
+            Словарь с данными пользователя или None, если не найден
+        """
+        try:
+            if not self.spreadsheet:
+                logger.error("Нет подключения к Google Sheets")
+                return None
+
+            worksheet = self.spreadsheet.worksheet("users")
+            
+            # Находим строку с указанным ID
+            cell = self._execute_with_retry(
+                worksheet.find, str(user_id), in_column=1
+            )
+            
+            if not cell:
+                return None
+                
+            row_data = worksheet.row_values(cell.row)
+            headers = worksheet.row_values(1)
+            
+            # Преобразуем данные строки в словарь
+            user_data = dict(zip(headers, row_data))
+            
+            # Преобразуем id и telegram_id в числа
+            if "id" in user_data and user_data["id"]:
+                user_data["id"] = int(user_data["id"])
+            if "telegram_id" in user_data and user_data["telegram_id"]:
+                user_data["telegram_id"] = int(user_data["telegram_id"])
+                
+            return user_data
+        except Exception as e:
+            logger.error(f"Ошибка при получении пользователя по ID: {e}")
+            return None
+
     def set_feedback_bonus_used(self, telegram_id: int, used: bool = True) -> bool:
         """
         Устанавливает флаг использования бонуса за обратную связь.

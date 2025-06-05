@@ -1532,16 +1532,34 @@ def handle_admin_feedback(message):
             
             # Адаптируем структуру данных из Google Sheets для работы с существующим кодом отчета
             for feedback in feedback_data:
-                # Получаем необходимые данные
-                telegram_id = feedback.get('telegram_id', '0')
+                # Получаем user_id из feedback записи (это внутренний ID пользователя)
+                internal_user_id = feedback.get('user_id', 0)
                 try:
-                    telegram_id = int(telegram_id)
+                    internal_user_id = int(internal_user_id)
                 except ValueError:
+                    internal_user_id = 0
+                
+                # Получаем данные пользователя по внутреннему ID
+                user_data = None
+                if internal_user_id > 0:
+                    try:
+                        # Получаем пользователя по внутреннему ID
+                        user_data = sheets_manager.get_user_by_id(internal_user_id)
+                    except Exception as e:
+                        logger.warning(f"Не удалось получить пользователя по ID {internal_user_id}: {e}")
+                
+                # Используем данные пользователя или значения по умолчанию
+                if user_data:
+                    telegram_id = user_data.get('telegram_id', 0)
+                    username = user_data.get('username', '')
+                    first_name = user_data.get('first_name', '')
+                    last_name = user_data.get('last_name', '')
+                else:
+                    # Если не удалось найти пользователя, используем значения по умолчанию
                     telegram_id = 0
-                    
-                username = feedback.get('username', '')
-                first_name = feedback.get('first_name', '')
-                last_name = feedback.get('last_name', '')
+                    username = 'unknown'
+                    first_name = 'Unknown'
+                    last_name = 'User'
                 
                 # Значения по умолчанию для обязательных полей
                 rating = feedback.get('rating', 'unknown')
@@ -1562,16 +1580,16 @@ def handle_admin_feedback(message):
                     'rating': rating,
                     'comment': comment,
                     'timestamp': timestamp,
-                    'user_id': telegram_id  # Используем telegram_id вместо user_id
+                    'user_id': telegram_id
                 })
                 
                 # Добавляем запись в список
                 feedback_records.append((
                     fb,
                     telegram_id,
-                    username or 'unknown',
-                    first_name or 'Unknown',
-                    last_name or 'User'
+                    username,
+                    first_name,
+                    last_name
                 ))
                 
             # Отладочное сообщение
