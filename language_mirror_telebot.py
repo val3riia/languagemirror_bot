@@ -266,7 +266,7 @@ def handle_start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     start_button = types.KeyboardButton('/start')
     articles_button = types.KeyboardButton('/articles')
-    stop_button = types.KeyboardButton('/stop_discussion')
+    stop_button = types.KeyboardButton('/stop_articles')
     
     # Добавляем основные кнопки
     markup.add(start_button)
@@ -339,7 +339,7 @@ def handle_start(message):
     welcome_text += "🔹 Main Commands:\n\n"
     welcome_text += "• /start - show this welcome message\n"
     welcome_text += "• /articles - find English articles for reading practice (1 request per day)\n"
-    welcome_text += "• /stop_discussion - end the current conversation\n\n"
+    welcome_text += "• /stop_articles - end the current conversation\n\n"
     welcome_text += "💡 Tip: Provide feedback after conversations to receive a bonus article request!\n\n"
     welcome_text += "Use the buttons below or type a command to get started!"
     
@@ -420,7 +420,7 @@ def handle_discussion(message):
                 active_session = True
                 bot.send_message(
                     chat_id,
-                    "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
+                    "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_articles, чтобы завершить текущую беседу."
                 )
                 logger.info(f"Пользователь {username} (ID: {user_id}) уже имеет активную сессию")
                 return
@@ -432,7 +432,7 @@ def handle_discussion(message):
             active_session = True
             bot.send_message(
                 chat_id,
-                "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_discussion, чтобы завершить текущую беседу."
+                "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_articles, чтобы завершить текущую беседу."
             )
             return
     
@@ -597,9 +597,9 @@ def handle_language_level(call):
         text=f"Great! I'll adapt to your {level} level.\n\nNow tell me — what topic is on your mind today? What would you like to explore?"
     )
 
-@bot.message_handler(commands=['stop_discussion'])
+@bot.message_handler(commands=['stop_articles', 'stop_discussion'])
 def handle_stop_discussion(message):
-    """Обрабатывает команду /stop_discussion."""
+    """Обрабатывает команду /stop_articles."""
     user_id = message.from_user.id
     
     # Проверяем, есть ли у пользователя активная сессия
