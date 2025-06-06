@@ -590,6 +590,14 @@ class SheetsManager:
 
             worksheet = self.spreadsheet.worksheet("sessions")
             
+            # Проверяем и исправляем заголовки, если необходимо
+            current_headers = worksheet.row_values(1)
+            expected_headers = ["id", "user_id", "language_level", "created_at", "updated_at", "is_active", "data"]
+            
+            if current_headers != expected_headers:
+                logger.info(f"Fixing session headers from {current_headers} to {expected_headers}")
+                worksheet.update('A1:G1', [expected_headers])
+            
             # Получаем последний ID
             id_col = worksheet.col_values(1)
             next_id = 1
@@ -623,6 +631,10 @@ class SheetsManager:
             headers = worksheet.row_values(1)
             session_dict = dict(zip(headers, session_row))
             
+            # Исправляем возможную проблему с неправильным заголовком telegram_id
+            if "telegram_id" in session_dict and "user_id" not in session_dict:
+                session_dict["user_id"] = session_dict["telegram_id"]
+            
             # Если data - это JSON строка, преобразуем её обратно в словарь
             if "data" in session_dict and isinstance(session_dict["data"], str):
                 try:
@@ -630,6 +642,7 @@ class SheetsManager:
                 except json.JSONDecodeError:
                     session_dict["data"] = {}
             
+            logger.info(f"Created session dict with headers {headers}: {session_dict}")
             return session_dict
         except Exception as e:
             logger.error(f"Ошибка при создании сессии: {e}")
