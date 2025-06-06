@@ -142,7 +142,7 @@ has_telegram_token = bool(os.environ.get("TELEGRAM_TOKEN"))
 # PostgreSQL больше не используется, все данные в Google Sheets
 database_configured = True
 
-# Включаем автозапуск для восстановления работы бота
+# Временно принудительно активируем автозапуск для отладки
 forced_auto_start = True
 
 if (bot_auto_start or forced_auto_start) and has_telegram_token:

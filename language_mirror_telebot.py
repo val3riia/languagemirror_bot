@@ -1289,19 +1289,8 @@ def handle_feedback_comment(message):
     bot.send_message(
         message.chat.id,
         "Thank you for your comments! Your feedback helps me improve.\n\n"
-        "Ready for more? Use /articles to explore new topics or /discussion for a conversation!"
+        "Feel free to use /articles anytime you want to practice English again."
     )
-    
-    # Завершаем сессию полностью после получения комментария
-    if session_manager is not None:
-        try:
-            session_manager.end_session(user_id)
-            logger.info(f"Сессия завершена после обратной связи для пользователя {user_id}")
-        except Exception as e:
-            logger.error(f"Ошибка при завершении сессии: {e}")
-    elif user_id in user_sessions:
-        del user_sessions[user_id]
-        logger.info(f"Локальная сессия завершена после обратной связи для пользователя {user_id}")
 
 def handle_discussion_feedback_comment(message):
     """Обрабатывает комментарии к обратной связи для дискуссий."""
@@ -1393,19 +1382,17 @@ def handle_discussion_feedback_comment(message):
     bot.send_message(
         message.chat.id,
         "Thank you for your comments! Your feedback helps me improve.\n\n"
-        "Ready for more? Use /articles to explore new topics or /discussion for a conversation!"
+        "Feel free to use /discussion anytime you want to have another conversation."
     )
     
-    # Завершаем сессию полностью после получения комментария
+    # Очищаем данные обратной связи из временного хранилища
     if session_manager is not None:
         try:
             session_manager.end_session(user_id)
-            logger.info(f"Сессия завершена после обратной связи для пользователя {user_id}")
         except Exception as e:
-            logger.error(f"Ошибка при завершении сессии: {e}")
+            logger.error(f"Ошибка при завершении сессии после обратной связи: {e}")
     elif user_id in user_sessions:
         del user_sessions[user_id]
-        logger.info(f"Локальная сессия завершена после обратной связи для пользователя {user_id}")
 
 def find_articles_by_topic(topic: str, language_level: str) -> list:
     """
