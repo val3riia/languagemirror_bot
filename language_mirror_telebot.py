@@ -1891,35 +1891,6 @@ def handle_all_messages(message):
             # Отправляем ответ пользователю
             bot.send_message(message.chat.id, response)
             
-            # Проверяем, нужно ли завершить беседу (после 8-10 сообщений)
-            message_count = len(conversation_history) + 1  # +1 для текущего сообщения
-            
-            if message_count >= 8:  # Завершаем после 8 сообщений от пользователя
-                logger.info(f"Автоматическое завершение дискуссии после {message_count} сообщений для пользователя {user_id}")
-                
-                # Отправляем сообщение о завершении
-                bot.send_message(
-                    message.chat.id,
-                    "That was a great conversation! I really enjoyed discussing this with you. "
-                    "Feel free to start another discussion anytime with /discussion."
-                )
-                
-                # Запрашиваем обратную связь
-                request_feedback(message.chat.id, "discussion")
-                
-                # Завершаем сессию
-                if session_manager is not None:
-                    try:
-                        session_manager.end_session(user_id)
-                    except Exception as e:
-                        logger.error(f"Ошибка при завершении дискуссии в session_manager: {e}")
-                else:
-                    if user_id in user_sessions:
-                        user_sessions[user_id] = {
-                            "last_active": time.time(),
-                            "waiting_for_discussion_feedback": True
-                        }
-            
             return
             
         except Exception as e:
@@ -1961,44 +1932,8 @@ def handle_all_messages(message):
                     # Обновляем счетчик сообщений в сессии
                     session_manager.update_session(user_id, {"message_count": message_count})
                     
-                    # Проверяем, нужно ли закрыть сессию после 3-х сообщений
-                    if message_count >= 3 and session_mode == "conversation":
-                        # Отправляем ответ пользователю
-                        bot.send_message(message.chat.id, response)
-                        
-                        # Логируем автоматическое завершение
-                        logger.info(f"Автоматическое завершение беседы после 3 сообщений для пользователя {user_id}")
-                        
-                        # Отправляем сообщение о завершении
-                        bot.send_message(
-                            message.chat.id,
-                            "We've had a good conversation! If you'd like to talk more or get article recommendations, "
-                            "just use /articles to start a new session."
-                        )
-                        
-                        # Создаем клавиатуру для обратной связи
-                        markup = types.InlineKeyboardMarkup(row_width=3)
-                        markup.add(
-                            types.InlineKeyboardButton("👍 Helpful", callback_data="feedback_helpful"),
-                            types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
-                            types.InlineKeyboardButton("👎 Not helpful", callback_data="feedback_not_helpful")
-                        )
-                        
-                        # Запрашиваем обратную связь
-                        bot.send_message(
-                            message.chat.id,
-                            "How was our conversation?",
-                            reply_markup=markup
-                        )
-                        
-                        # Заканчиваем сессию
-                        try:
-                            session_manager.end_session(user_id)
-                        except Exception as e:
-                            logger.error(f"Ошибка при завершении сессии в session_manager: {e}")
-                        
-                        # Прерываем выполнение функции, чтобы не отправлять повторное сообщение
-                        return
+                    # Отправляем ответ пользователю
+                    bot.send_message(message.chat.id, response)
                 
             except Exception as e:
                 logger.error(f"Ошибка при обработке сообщения ассистента: {e}")
@@ -2013,44 +1948,7 @@ def handle_all_messages(message):
             message_count = user_sessions[user_id].get("message_count", 0) + 1
             user_sessions[user_id]["message_count"] = message_count
             
-            # Проверяем, нужно ли закрыть сессию после 3-х сообщений
-            if message_count >= 3 and session_mode == "conversation":
-                # Отправляем ответ пользователю
-                bot.send_message(message.chat.id, response)
-                
-                # Логируем автоматическое завершение
-                logger.info(f"Автоматическое завершение беседы после 3 сообщений для пользователя {user_id}")
-                
-                # Отправляем сообщение о завершении
-                bot.send_message(
-                    message.chat.id,
-                    "We've had a good conversation! If you'd like to talk more or get article recommendations, "
-                    "just use /articles to start a new session."
-                )
-                
-                # Создаем клавиатуру для обратной связи
-                markup = types.InlineKeyboardMarkup(row_width=3)
-                markup.add(
-                    types.InlineKeyboardButton("👍 Helpful", callback_data="feedback_helpful"),
-                    types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
-                    types.InlineKeyboardButton("👎 Not helpful", callback_data="feedback_not_helpful")
-                )
-                
-                # Запрашиваем обратную связь
-                bot.send_message(
-                    message.chat.id,
-                    "How was our conversation?",
-                    reply_markup=markup
-                )
-                
-                # Очищаем сессию, оставляя только флаг обратной связи
-                user_sessions[user_id] = {
-                    "last_active": time.time(),
-                    "waiting_for_feedback": True
-                }
-                
-                # Прерываем выполнение функции, чтобы не отправлять повторное сообщение
-                return
+            # Продолжаем беседу без автоматического завершения
         
         # Отправляем ответ пользователю (только если сессия не была завершена)
         bot.send_message(message.chat.id, response)
