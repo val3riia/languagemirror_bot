@@ -1116,9 +1116,32 @@ def handle_discussion_feedback(call):
     # Регистрируем обработчик следующего сообщения
     bot.register_next_step_handler(call.message, handle_discussion_feedback_comment)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not call.data == "feedback_skip")
+@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not call.data == "feedback_skip" or call.data in ["quick_discussion", "quick_articles"])
 def handle_feedback(call):
-    """Обрабатывает обратную связь пользователя."""
+    """Обрабатывает обратную связь пользователя и быстрые действия."""
+    
+    # Обрабатываем быстрые действия из статистики
+    if call.data == "quick_discussion":
+        bot.answer_callback_query(call.id, "Starting conversation...")
+        # Создаем сообщение-имитацию для обработки /discussion
+        mock_message = type('Message', (), {
+            'chat': type('Chat', (), {'id': call.message.chat.id}),
+            'from_user': call.from_user,
+            'text': '/discussion'
+        })
+        handle_discussion(mock_message)
+        return
+    
+    if call.data == "quick_articles":
+        bot.answer_callback_query(call.id, "Finding articles...")
+        # Создаем сообщение-имитацию для обработки /articles
+        mock_message = type('Message', (), {
+            'chat': type('Chat', (), {'id': call.message.chat.id}),
+            'from_user': call.from_user,
+            'text': '/articles'
+        })
+        handle_articles(mock_message)
+        return
     user_id = call.from_user.id
     feedback_type = call.data.split('_')[1]
     
