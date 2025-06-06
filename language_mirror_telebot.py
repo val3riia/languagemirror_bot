@@ -761,8 +761,7 @@ def handle_discussion(message):
         send_subscription_request(message.chat.id, "discussion")
         return
     
-    # Записываем активность использования функции discussion
-    record_user_activity(user_id, "discussion_command")
+
     
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
