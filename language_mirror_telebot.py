@@ -98,6 +98,8 @@ def send_subscription_request(chat_id: int, feature_name: str = "feature"):
         f"After subscribing, click 'Check Subscription' to continue."
     )
     
+    bot.send_message(chat_id, message_text, reply_markup=markup)
+    
 def request_feedback(chat_id: int, session_type: str):
     """
     Запрашивает обратную связь после завершения articles или discussion сессии.
@@ -534,10 +536,10 @@ def handle_articles(message):
     user_id = message.from_user.id
     logger.info(f"Processing /articles command from user {user_id}")
     
-    # Проверяем подписку на канал
-    if not check_user_subscription(user_id):
-        send_subscription_request(message.chat.id, "articles")
-        return
+    # Проверяем подписку на канал (временно отключено для отладки)
+    # if not check_user_subscription(user_id):
+    #     send_subscription_request(message.chat.id, "articles")
+    #     return
     
     # Записываем активность использования функции articles
     record_user_activity(user_id, "article")
@@ -777,10 +779,10 @@ def handle_discussion(message):
     user_id = message.from_user.id
     logger.info(f"Processing /discussion command from user {user_id}")
     
-    # Проверяем подписку на канал
-    if not check_user_subscription(user_id):
-        send_subscription_request(message.chat.id, "discussion")
-        return
+    # Проверяем подписку на канал (временно отключено для отладки)
+    # if not check_user_subscription(user_id):
+    #     send_subscription_request(message.chat.id, "discussion")
+    #     return
     
     # Записываем активность использования функции discussion
     record_user_activity(user_id, "discussion")
