@@ -108,31 +108,20 @@ def request_feedback(chat_id: int, session_type: str):
         chat_id: ID чата
         session_type: Тип сессии ("articles" или "discussion")
     """
-    feature_messages = {
-        "articles": "поиск статей",
-        "discussion": "беседу с ИИ"
-    }
+    markup = telebot.types.InlineKeyboardMarkup(row_width=3)
     
-    feature_text = feature_messages.get(session_type, "функцию")
+    # Создаем кнопки с простым форматом, совместимым с обработчиками
+    markup.add(
+        telebot.types.InlineKeyboardButton("👍 Helpful", callback_data="feedback_helpful"),
+        telebot.types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
+        telebot.types.InlineKeyboardButton("👎 Not helpful", callback_data="feedback_not_helpful")
+    )
     
-    markup = telebot.types.InlineKeyboardMarkup(row_width=5)
-    
-    # Создаем кнопки с рейтингом от 1 до 5
-    rating_buttons = []
-    rating_labels = ["1 - Poor", "2 - Fair", "3 - Good", "4 - Very Good", "5 - Excellent"]
-    
-    for rating in range(1, 6):
-        button = telebot.types.InlineKeyboardButton(
-            rating_labels[rating-1],
-            callback_data=f"feedback_{session_type}_{rating}"
-        )
-        rating_buttons.append(button)
-    
-    markup.add(*rating_buttons)
+    activity_name = "article search" if session_type == "articles" else "conversation"
     
     bot.send_message(
         chat_id,
-        f"How was your {session_type} experience? Please rate it:",
+        f"How was your {activity_name} experience?",
         reply_markup=markup
     )
 
