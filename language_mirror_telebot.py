@@ -825,12 +825,19 @@ def handle_stop_discussion(message):
         try:
             current_session = session_manager.get_session(user_id)
             if current_session:
-                session_exists = True
+                # Сессия считается активной, даже если feedback завершен
+                # но не если она находится в режиме ожидания комментария
+                waiting_for_comment = current_session.get("waiting_for_feedback_comment", False)
+                if not waiting_for_comment:
+                    session_exists = True
         except Exception as e:
             logger.error(f"Ошибка при получении сессии пользователя: {e}")
     elif user_id in user_sessions:
-        session_exists = True
-        current_session = user_sessions[user_id]
+        # Проверяем локальную сессию на режим ожидания комментария
+        waiting_for_comment = user_sessions[user_id].get("waiting_for_feedback_comment", False)
+        if not waiting_for_comment:
+            session_exists = True
+            current_session = user_sessions[user_id]
     
     if not session_exists:
         bot.send_message(
@@ -1131,14 +1138,22 @@ def handle_feedback(call):
         session_manager = get_session_manager()
         
         if session_manager:
-            # Завершаем сессию в базе данных, но сохраняем информацию о feedback
+            # Сохраняем информацию о feedback в существующей сессии, не завершая её
             session = session_manager.get_session(user_id)
             if session:
-                session_manager.end_session(user_id)
-            
-            # Создаем временную сессию только для хранения типа обратной связи
-            session_manager.create_session(user_id, {"feedback_type": feedback_type})
-            logger.info(f"Создана временная сессия для хранения обратной связи типа: {feedback_type}")
+                # Обновляем сессию с информацией о feedback, но не завершаем её
+                session_manager.update_session(user_id, {
+                    "feedback_type": feedback_type,
+                    "waiting_for_feedback_comment": True
+                })
+                logger.info(f"Обновлена сессия с типом обратной связи: {feedback_type}")
+            else:
+                # Создаем временную сессию только для хранения типа обратной связи
+                session_manager.create_session(user_id, {
+                    "feedback_type": feedback_type,
+                    "waiting_for_feedback_comment": True
+                })
+                logger.info(f"Создана временная сессия для хранения обратной связи типа: {feedback_type}")
         else:
             # В случае недоступности Google Sheets используем локальное хранилище
             if user_id in user_sessions:
@@ -1180,14 +1195,20 @@ def handle_feedback_comment(message):
             "Thanks again for your feedback! Use /articles anytime you want to practice English."
         )
         
-        # Завершаем сессию
+        # Очищаем только флаг ожидания комментария, но сохраняем сессию
         if session_manager is not None:
             try:
-                session_manager.end_session(user_id)
+                session = session_manager.get_session(user_id)
+                if session:
+                    session_manager.update_session(user_id, {
+                        "waiting_for_feedback_comment": False,
+                        "feedback_completed": True
+                    })
             except Exception as e:
-                logger.error(f"Ошибка при завершении сессии: {e}")
+                logger.error(f"Ошибка при обновлении сессии: {e}")
         elif user_id in user_sessions:
-            del user_sessions[user_id]
+            user_sessions[user_id]["waiting_for_feedback_comment"] = False
+            user_sessions[user_id]["feedback_completed"] = True
             
         return
     
@@ -1282,15 +1303,20 @@ def handle_discussion_feedback_comment(message):
             "Thanks again for your feedback! Use /discussion anytime you want to have another conversation."
         )
         
-        # Завершаем сессию
+        # Очищаем только флаг ожидания комментария, но сохраняем сессию
         if session_manager is not None:
             try:
-                session_manager.end_session(user_id)
+                session = session_manager.get_session(user_id)
+                if session:
+                    session_manager.update_session(user_id, {
+                        "waiting_for_feedback_comment": False,
+                        "feedback_completed": True
+                    })
             except Exception as e:
-                logger.error(f"Ошибка при завершении сессии: {e}")
-        else:
-            if user_id in user_sessions:
-                del user_sessions[user_id]
+                logger.error(f"Ошибка при обновлении сессии: {e}")
+        elif user_id in user_sessions:
+            user_sessions[user_id]["waiting_for_feedback_comment"] = False
+            user_sessions[user_id]["feedback_completed"] = True
         
         return
     
