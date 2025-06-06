@@ -1112,9 +1112,49 @@ def handle_feedback(call):
     # Сохраняем обратную связь в лог
     logger.info(f"User {user_id} gave feedback: {rating_map.get(feedback_type)}")
     
-    # Сохраняем только тип обратной связи для последующего использования
-    # Фактическое сохранение в Google Sheets произойдет только при добавлении комментария
-    logger.info(f"Сохраняем тип обратной связи {feedback_type} для последующего сохранения")
+    # Немедленно сохраняем обратную связь в Google Sheets (без ожидания комментария)
+    def save_immediate_feedback():
+        try:
+            from sheets_session_manager import get_session_manager
+            session_manager_instance = get_session_manager()
+            
+            if session_manager_instance and session_manager_instance.sheets_manager:
+                # Получаем информацию о пользователе
+                username = call.from_user.username or ""
+                first_name = call.from_user.first_name or ""
+                last_name = call.from_user.last_name or ""
+                
+                # Преобразуем rating в числовую оценку
+                rating_value = {
+                    "helpful": 5,
+                    "okay": 3,
+                    "not_helpful": 1
+                }.get(feedback_type, 3)
+                
+                # Добавляем запись обратной связи в Google Sheets
+                feedback_result = session_manager_instance.sheets_manager.add_feedback(
+                    telegram_id=user_id,
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name,
+                    rating=rating_value,
+                    comment="",  # Пустой комментарий, будет обновлен позже если пользователь добавит
+                    activity_type="article_search"
+                )
+                if feedback_result:
+                    logger.info(f"Обратная связь немедленно сохранена: пользователь {user_id}, оценка {rating_value}")
+                else:
+                    logger.error(f"Не удалось сохранить обратную связь для пользователя {user_id}")
+            else:
+                logger.warning("Google Sheets недоступен для сохранения обратной связи")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении обратной связи: {str(e)}")
+    
+    # Сохраняем обратную связь немедленно
+    import threading
+    threading.Thread(target=save_immediate_feedback, daemon=True).start()
+    
+    logger.info(f"Сохраняем тип обратной связи {feedback_type} для комментария")
     
     # Запрашиваем дополнительный комментарий
     bot.edit_message_text(
