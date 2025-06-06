@@ -2291,12 +2291,14 @@ def handle_admin_feedback(message):
                 return
             
             # Формируем отчет
-            # Подсчитываем статистику рейтингов
-            rating_counts = {"helpful": 0, "okay": 0, "not_helpful": 0}
+            # Подсчитываем статистику рейтингов для новой системы (1-5 звезд)
+            rating_counts = {"1": 0, "2": 0, "3": 0, "4": 0, "5": 0}
+            total_feedback = len(feedback_records)
             
             for record, _, _, _, _ in feedback_records:
-                if record.rating in rating_counts:
-                    rating_counts[record.rating] += 1
+                rating_str = str(record.rating)
+                if rating_str in rating_counts:
+                    rating_counts[rating_str] += 1
             
             # Сохраняем данные обратной связи для использования в колбэках
             user_feedback_data[message.from_user.id] = feedback_records
@@ -2311,9 +2313,12 @@ def handle_admin_feedback(message):
             
             # Отправляем отчет администратору с инлайн-кнопками
             report = "📊 *Отчет по обратной связи*\n\n"
-            report += f"👍 Полезно: {rating_counts['helpful']}\n"
-            report += f"🤔 Нормально: {rating_counts['okay']}\n"
-            report += f"👎 Не полезно: {rating_counts['not_helpful']}\n\n"
+            report += f"⭐ 1 звезда: {rating_counts['1']}\n"
+            report += f"⭐⭐ 2 звезды: {rating_counts['2']}\n"
+            report += f"⭐⭐⭐ 3 звезды: {rating_counts['3']}\n"
+            report += f"⭐⭐⭐⭐ 4 звезды: {rating_counts['4']}\n"
+            report += f"⭐⭐⭐⭐⭐ 5 звезд: {rating_counts['5']}\n\n"
+            report += f"📊 Всего отзывов: {total_feedback}\n\n"
             report += "Выберите действие для получения подробного отчета:"
             comment_count = 0
             
@@ -2324,12 +2329,15 @@ def handle_admin_feedback(message):
                     # Формируем имя пользователя для отображения
                     user_display = username or first_name or f"User {telegram_id}"
                     
-                    # Преобразуем рейтинг в эмодзи
+                    # Преобразуем рейтинг в эмодзи звезд
+                    rating_str = str(record.rating)
                     rating_emoji = {
-                        "helpful": "👍",
-                        "okay": "🤔",
-                        "not_helpful": "👎"
-                    }.get(record.rating, "❓")
+                        "1": "⭐",
+                        "2": "⭐⭐", 
+                        "3": "⭐⭐⭐",
+                        "4": "⭐⭐⭐⭐",
+                        "5": "⭐⭐⭐⭐⭐"
+                    }.get(rating_str, "❓")
                     
                     # Дата в формате ДД.ММ.ГГГГ
                     date_str = record.timestamp.strftime("%d.%m.%Y")
