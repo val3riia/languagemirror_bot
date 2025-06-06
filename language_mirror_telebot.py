@@ -1271,7 +1271,7 @@ def handle_all_messages(message):
                         bot.send_message(
                             message.chat.id,
                             "We've had a good conversation! If you'd like to talk more or get article recommendations, "
-                            "just use /discussion to start a new session."
+                            "just use /articles to start a new session."
                         )
                         
                         # Создаем клавиатуру для обратной связи
@@ -1323,7 +1323,7 @@ def handle_all_messages(message):
                 bot.send_message(
                     message.chat.id,
                     "We've had a good conversation! If you'd like to talk more or get article recommendations, "
-                    "just use /discussion to start a new session."
+                    "just use /articles to start a new session."
                 )
                 
                 # Создаем клавиатуру для обратной связи
