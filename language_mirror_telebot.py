@@ -169,15 +169,17 @@ def record_user_activity(user_id: int, activity_type: str):
                     last_name=last_name
                 )
             
-            if user_data and isinstance(user_data, dict) and 'id' in user_data:
-                # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
-                session_manager.sheets_manager.add_feedback(
-                    user_id=int(user_data["id"]),
-                    rating=0,  # 0 означает что это запись активности, а не обратная связь
-                    comment=f"User accessed {activity_type} feature",
-                    activity_type=activity_type
-                )
-                logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
+            # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
+            session_manager.sheets_manager.add_feedback(
+                telegram_id=user_id,
+                username=getattr(user, 'username', '') or '',
+                first_name=getattr(user, 'first_name', '') or '',
+                last_name=getattr(user, 'last_name', '') or '',
+                rating=0,  # 0 означает что это запись активности, а не обратная связь
+                comment=f"User accessed {activity_type} feature",
+                activity_type=activity_type
+            )
+            logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
         except Exception as e:
             logger.error(f"Ошибка при записи активности: {e}")
 
@@ -1283,17 +1285,16 @@ def handle_feedback_comment(message):
                 }.get(feedback_type, 3)
                 
                 # Добавляем запись обратной связи в Google Sheets
-                if sheet_user and isinstance(sheet_user, dict) and 'id' in sheet_user:
-                    feedback_result = session_manager.sheets_manager.add_feedback(
-                        user_id=int(sheet_user["id"]),
-                        rating=rating_value,
-                        comment=comment
-                    )
-                    logger.info(f"Обратная связь сохранена: пользователь {user_id}, оценка {rating_value}")
-                    
-
-                else:
-                    logger.error(f"Не удалось получить данные пользователя для ID {user_id}")
+                feedback_result = session_manager.sheets_manager.add_feedback(
+                    telegram_id=user_id,
+                    username=getattr(message.from_user, 'username', '') or '',
+                    first_name=getattr(message.from_user, 'first_name', '') or '',
+                    last_name=getattr(message.from_user, 'last_name', '') or '',
+                    rating=rating_value,
+                    comment=comment,
+                    activity_type="greeting"
+                )
+                logger.info(f"Обратная связь сохранена: пользователь {user_id}, оценка {rating_value}")
             else:
                 logger.warning("Google Sheets недоступен для сохранения обратной связи")
         except Exception as e:

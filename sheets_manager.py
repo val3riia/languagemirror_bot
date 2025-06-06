@@ -183,7 +183,7 @@ class SheetsManager:
             "users": ["id", "telegram_id", "username", "first_name", "last_name", "created_at"],
             "sessions": ["id", "user_id", "language_level", "created_at", "updated_at", "is_active", "data"],
             "messages": ["id", "session_id", "role", "content", "created_at"],
-            "feedback": ["id", "user_id", "session_id", "rating", "comment", "command", "created_at"]
+            "feedback": ["id", "telegram_id", "username", "first_name", "last_name", "session_id", "rating", "comment", "command", "created_at"]
         }
 
         existing_sheets = [ws.title for ws in self.spreadsheet.worksheets()]
@@ -854,20 +854,27 @@ class SheetsManager:
 
     def add_feedback(
         self, 
-        user_id: int, 
-        rating: int, 
+        telegram_id: int,
+        username: str = "",
+        first_name: str = "",
+        last_name: str = "",
+        rating: int = 0, 
         comment: Optional[str] = None, 
         session_id: Optional[int] = None,
         activity_type: str = "unknown"
     ) -> Optional[Dict[str, Any]]:
         """
-        Добавляет обратную связь от пользователя.
+        Добавляет обратную связь от пользователя с полными данными пользователя.
         
         Args:
-            user_id: ID пользователя
+            telegram_id: Telegram ID пользователя
+            username: Имя пользователя в Telegram
+            first_name: Имя пользователя
+            last_name: Фамилия пользователя
             rating: Оценка (1-5)
             comment: Комментарий
             session_id: ID сессии (опционально)
+            activity_type: Тип активности (greeting, article, discussion)
             
         Returns:
             Словарь с данными добавленной обратной связи или None при ошибке
@@ -892,7 +899,10 @@ class SheetsManager:
             
             feedback_row = [
                 next_id,
-                user_id,
+                telegram_id,
+                username or "",
+                first_name or "",
+                last_name or "",
                 session_id or "",
                 rating,
                 comment or "",
@@ -906,6 +916,8 @@ class SheetsManager:
             # Возвращаем данные в формате словаря
             headers = worksheet.row_values(1)
             feedback_dict = dict(zip(headers, feedback_row))
+            
+            logger.info(f"Feedback recorded: telegram_id={telegram_id}, username={username}, rating={rating}, activity={activity_type}")
             
             return feedback_dict
         except Exception as e:
