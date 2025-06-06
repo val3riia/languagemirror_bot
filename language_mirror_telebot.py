@@ -837,6 +837,7 @@ def handle_discussion_level(call):
     else:  # C1, C2
         welcome_text += "I'm curious to hear your thoughts! What topic has been occupying your mind lately? Let's dive into a meaningful conversation."
     
+    welcome_text += "\n\n📝 Note: I focus on positive, educational topics like hobbies, travel, culture, technology, and personal experiences. For sensitive topics (politics, religion, conflicts), please ensure you understand the responsibility for your words and actions."
     welcome_text += f"\n\nUse /stop_discussion when you're ready to end our chat."
     
     bot.edit_message_text(
