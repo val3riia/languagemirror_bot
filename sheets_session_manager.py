@@ -183,11 +183,12 @@ class SheetSessionManager:
                     language_level = initial_data.get("language_level")
                 
                 # Создаем новую сессию
-                self.sheets_manager.create_session(
+                session_result = self.sheets_manager.create_session(
                     user_id=user["id"],
                     language_level=language_level,
                     session_data=initial_data
                 )
+                logger.info(f"Session created in Google Sheets for user {user_id}: {session_result}")
             except Exception as e:
                 logger.error(f"Ошибка при создании сессии в Google Sheets: {e}")
                 # Fallback to in-memory
@@ -221,12 +222,16 @@ class SheetSessionManager:
             try:
                 # Получаем пользователя
                 user = self.sheets_manager.get_user_by_telegram_id(user_id)
+                logger.info(f"Getting session for telegram_id {user_id}, found user: {user}")
                 if not user:
+                    logger.info(f"No user found for telegram_id {user_id}")
                     return None
                 
                 # Получаем активную сессию
                 session = self.sheets_manager.get_active_session(user["id"])
+                logger.info(f"Active session for user_id {user['id']}: {session}")
                 if not session:
+                    logger.info(f"No active session found for user_id {user['id']}")
                     return None
                 
                 # Проверяем таймаут сессии
