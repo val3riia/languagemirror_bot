@@ -47,6 +47,86 @@ if not TELEGRAM_TOKEN:
 # Создаем экземпляр бота
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
+# Настройки для проверки подписки
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@your_channel")  # Замените на ваш канал
+CHANNEL_CHAT_ID = os.environ.get("CHANNEL_CHAT_ID", "-1001234567890")  # Замените на ID вашего канала
+
+def check_user_subscription(user_id: int) -> bool:
+    """
+    Проверяет, подписан ли пользователь на канал.
+    
+    Args:
+        user_id: ID пользователя в Telegram
+        
+    Returns:
+        True если подписан, False если нет
+    """
+    try:
+        # Получаем информацию о пользователе в канале
+        member = bot.get_chat_member(CHANNEL_CHAT_ID, user_id)
+        # Проверяем статус пользователя (member, administrator, creator)
+        return member.status in ['member', 'administrator', 'creator']
+    except Exception as e:
+        logger.error(f"Ошибка при проверке подписки пользователя {user_id}: {e}")
+        # В случае ошибки разрешаем доступ (например, если канал не настроен)
+        return True
+
+def send_subscription_request(chat_id: int, feature_name: str = "feature"):
+    """
+    Отправляет сообщение с просьбой подписаться на канал.
+    
+    Args:
+        chat_id: ID чата
+        feature_name: Название функции (articles/discussion)
+    """
+    markup = types.InlineKeyboardMarkup()
+    subscribe_button = types.InlineKeyboardButton(
+        "📢 Subscribe to Channel", 
+        url=f"https://t.me/{CHANNEL_USERNAME[1:]}"  # Убираем @ из начала
+    )
+    check_button = types.InlineKeyboardButton(
+        "✅ Check Subscription", 
+        callback_data=f"check_subscription_{feature_name}"
+    )
+    markup.add(subscribe_button)
+    markup.add(check_button)
+    
+    message_text = (
+        f"🤖 To access the {feature_name} feature, please subscribe to our channel!\n\n"
+        f"Our bot is free and powered by the latest AI models to provide you with the best learning experience. "
+        f"Supporting us by joining our channel helps us continue improving the service.\n\n"
+        f"After subscribing, click 'Check Subscription' to continue."
+    )
+    
+    bot.send_message(chat_id, message_text, reply_markup=markup)
+
+def record_user_activity(user_id: int, activity_type: str):
+    """
+    Записывает активность пользователя в базу данных.
+    
+    Args:
+        user_id: ID пользователя в Telegram
+        activity_type: Тип активности ("greeting", "article", "discussion")
+    """
+    if session_manager is not None:
+        try:
+            # Получаем информацию о пользователе из Telegram
+            user_info = bot.get_chat(user_id)
+            username = user_info.username if hasattr(user_info, 'username') else ""
+            first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
+            last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
+            
+            # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
+            session_manager.add_feedback(
+                user_id=user_id,
+                rating=0,  # 0 означает что это запись активности, а не обратная связь
+                comment=f"User accessed {activity_type} feature",
+                activity_type=activity_type
+            )
+            logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при записи активности: {e}")
+
 # Список администраторов (имена пользователей и ID)
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
 ADMIN_USER_ID = os.environ.get("ADMIN_USER_ID", "")
@@ -261,7 +341,11 @@ CORRECTION_PATTERNS = {
 @bot.message_handler(commands=['start'])
 def handle_start(message):
     """Обрабатывает команду /start."""
+    user_id = message.from_user.id
     user_name = message.from_user.first_name
+    
+    # Записываем активность приветствия в базу данных
+    record_user_activity(user_id, "greeting")
     
     # Создаем клавиатуру с командами
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -395,6 +479,16 @@ def handle_start(message):
 @bot.message_handler(commands=['articles'])
 def handle_articles(message):
     """Обрабатывает команду /articles для поиска статей."""
+    user_id = message.from_user.id
+    
+    # Проверяем подписку на канал
+    if not check_user_subscription(user_id):
+        send_subscription_request(message.chat.id, "articles")
+        return
+    
+    # Записываем активность использования функции articles
+    record_user_activity(user_id, "article")
+    
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
     
