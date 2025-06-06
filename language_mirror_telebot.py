@@ -1635,7 +1635,12 @@ Adapt your style to the user's level ({}) if they specify it.""".format(language
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     """Обрабатывает все текстовые сообщения."""
-    # Игнорируем команды
+    # Обрабатываем команду /admin_feedback отдельно
+    if message.text == '/admin_feedback':
+        handle_admin_feedback(message)
+        return
+    
+    # Игнорируем остальные команды
     if message.text.startswith('/'):
         logger.info(f"Ignoring command message: {message.text}")
         return
