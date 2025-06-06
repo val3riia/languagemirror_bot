@@ -861,44 +861,60 @@ def handle_discussion_level(call):
 
 @bot.message_handler(commands=['stop_articles', 'stop_discussion'])
 def handle_stop_discussion(message):
-    """Обрабатывает команду /stop_articles."""
+    """Обрабатывает команду /stop_articles и /stop_discussion."""
     user_id = message.from_user.id
+    
+    # Определяем тип сессии по команде
+    command = message.text.lower()
+    if command == "/stop_articles":
+        session_type = "articles"
+        session_name = "article search"
+    else:
+        session_type = "discussion"
+        session_name = "discussion"
     
     # Проверяем, есть ли у пользователя активная сессия
     session_exists = False
+    current_session = None
     
     if session_manager is not None:
         try:
-            session = session_manager.get_session(user_id)
-            if session:
+            current_session = session_manager.get_session(user_id)
+            if current_session:
                 session_exists = True
         except Exception as e:
             logger.error(f"Ошибка при получении сессии пользователя: {e}")
     elif user_id in user_sessions:
         session_exists = True
+        current_session = user_sessions[user_id]
     
     if not session_exists:
         bot.send_message(
             message.chat.id,
-            "You don't have an active discussion session. "
-            "Use /articles to start one."
+            f"You don't have an active {session_name} session. "
+            f"Use /{session_type} to start one."
         )
         return
     
-    # Создаем клавиатуру для обратной связи
-    markup = types.InlineKeyboardMarkup(row_width=3)
-    markup.add(
-        types.InlineKeyboardButton("👍 Helpful", callback_data="feedback_helpful"),
-        types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
-        types.InlineKeyboardButton("👎 Not helpful", callback_data="feedback_not_helpful")
-    )
+    # Проверяем, соответствует ли текущая сессия команде
+    if current_session and isinstance(current_session, dict):
+        current_type = current_session.get("session_type", "")
+        if current_type and current_type != session_type:
+            bot.send_message(
+                message.chat.id,
+                f"You have an active {current_type} session, not a {session_type} session. "
+                f"Use /stop_{current_type} instead."
+            )
+            return
     
+    # Отправляем сообщение о завершении сессии
     bot.send_message(
         message.chat.id,
-        "Thank you for our conversation! I hope it was helpful for your English learning journey.\n\n"
-        "How would you rate our discussion?",
-        reply_markup=markup
+        f"Thank you for using the {session_name}! I hope it was helpful for your English learning journey."
     )
+    
+    # Запрашиваем обратную связь
+    request_feedback(message.chat.id, session_type)
 
 @bot.callback_query_handler(func=lambda call: call.data == "feedback_bonus" or call.data == "feedback_skip")
 def handle_feedback_bonus(call):
@@ -962,6 +978,112 @@ def handle_feedback_bonus(call):
             message_id=call.message.message_id,
             text="Sorry, there was an error processing your request. Please try again later."
         )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_'))
+def handle_feedback_callback(call):
+    """Обрабатывает обратную связь пользователя."""
+    try:
+        # Парсим callback_data: feedback_{session_type}_{rating} или feedback_{session_type}_skip
+        parts = call.data.split('_')
+        if len(parts) >= 3:
+            session_type = parts[1]  # articles или discussion
+            rating_str = parts[2]    # 1-5 или skip
+            
+            user_id = call.from_user.id
+            chat_id = call.message.chat.id
+            
+            if rating_str == "skip":
+                # Пользователь пропустил оценку
+                bot.answer_callback_query(call.id, "Спасибо за использование!")
+                bot.edit_message_text(
+                    "Оценка пропущена. Спасибо за использование!",
+                    chat_id=chat_id,
+                    message_id=call.message.message_id
+                )
+                
+                # Завершаем сессию
+                if session_manager:
+                    try:
+                        session_manager.end_session(user_id)
+                    except Exception as e:
+                        logger.debug(f"Ошибка при завершении сессии: {e}")
+                
+                return
+            
+            # Обрабатываем числовую оценку
+            try:
+                rating = int(rating_str)
+                if 1 <= rating <= 5:
+                    # Сохраняем обратную связь
+                    if session_manager and session_manager.sheets_manager:
+                        # Получаем данные пользователя
+                        user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+                        
+                        if user_data and isinstance(user_data, dict) and 'id' in user_data:
+                            # Записываем обратную связь
+                            session_manager.sheets_manager.add_feedback(
+                                user_id=int(user_data["id"]),
+                                rating=rating,
+                                comment=f"User rated {session_type} feature",
+                                activity_type=session_type
+                            )
+                            
+                            logger.info(f"Записана обратная связь: пользователь {user_id}, {session_type}, рейтинг {rating}")
+                        else:
+                            # Если пользователь не найден, создаем его
+                            try:
+                                user_info = bot.get_chat(user_id)
+                                username = user_info.username if hasattr(user_info, 'username') else ""
+                                first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
+                                last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
+                            except:
+                                username = ""
+                                first_name = ""
+                                last_name = ""
+                            
+                            new_user = session_manager.sheets_manager.create_user(
+                                telegram_id=user_id,
+                                username=username,
+                                first_name=first_name,
+                                last_name=last_name
+                            )
+                            
+                            if new_user and isinstance(new_user, dict) and 'id' in new_user:
+                                session_manager.sheets_manager.add_feedback(
+                                    user_id=int(new_user["id"]),
+                                    rating=rating,
+                                    comment=f"User rated {session_type} feature",
+                                    activity_type=session_type
+                                )
+                    
+                    # Отправляем подтверждение
+                    star_text = "⭐" * rating
+                    bot.answer_callback_query(call.id, f"Спасибо за оценку: {star_text}")
+                    bot.edit_message_text(
+                        f"Спасибо за оценку: {star_text}\n\nВаша обратная связь поможет нам улучшить сервис!",
+                        chat_id=chat_id,
+                        message_id=call.message.message_id
+                    )
+                    
+                    # Завершаем сессию
+                    if session_manager:
+                        try:
+                            session_manager.end_session(user_id)
+                            logger.info(f"Сессия {session_type} завершена для пользователя {user_id}")
+                        except Exception as e:
+                            logger.debug(f"Ошибка при завершении сессии: {e}")
+                            
+                else:
+                    bot.answer_callback_query(call.id, "Некорректная оценка")
+                    
+            except ValueError:
+                bot.answer_callback_query(call.id, "Ошибка при обработке оценки")
+        else:
+            bot.answer_callback_query(call.id, "Некорректные данные")
+            
+    except Exception as e:
+        logger.error(f"Ошибка при обработке обратной связи: {e}")
+        bot.answer_callback_query(call.id, "Произошла ошибка при обработке")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('check_subscription_'))
 def handle_subscription_check(call):
@@ -1612,23 +1734,17 @@ def handle_all_messages(message):
         for i, article in enumerate(articles, 1):
             articles_text += f"{i}. [{article['title']}]({article['url']})\n"
         
-        # Формируем клавиатуру для обратной связи
-        markup = types.InlineKeyboardMarkup(row_width=3)
-        markup.add(
-            types.InlineKeyboardButton("👍 Useful", callback_data="feedback_helpful"),
-            types.InlineKeyboardButton("🤔 Okay", callback_data="feedback_okay"),
-            types.InlineKeyboardButton("👎 Not really", callback_data="feedback_not_helpful")
-        )
-        
         # Отправляем ответ со статьями и завершаем беседу
         bot.send_message(message.chat.id, articles_text, parse_mode="Markdown")
         
-        # Сообщение о завершении с запросом обратной связи
+        # Сообщение о завершении
         bot.send_message(
             message.chat.id,
-            "Hope that gave you something to think about! Want to explore another topic? Just type /articles.\n\nHow was that for you?",
-            reply_markup=markup
+            "Hope that gave you something to think about! Want to explore another topic? Just type /articles."
         )
+        
+        # Запрашиваем обратную связь
+        request_feedback(message.chat.id, "articles")
         
         # Автоматически завершаем сессию после предоставления статей
         logger.info(f"Автоматическое завершение сессии после предоставления статей для пользователя {user_id}")
