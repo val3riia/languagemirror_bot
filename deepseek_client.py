@@ -69,7 +69,7 @@ class DeepSeekClient:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=200,
+                max_tokens=400,
                 temperature=0.7,
                 extra_headers={
                     "HTTP-Referer": "https://language-mirror-bot.replit.app",
@@ -78,9 +78,16 @@ class DeepSeekClient:
             )
             
             response = completion.choices[0].message.content
-            logger.info("Успешно получен ответ от DeepSeek R1")
+            logger.info(f"Успешно получен ответ от DeepSeek R1. Длина ответа: {len(response) if response else 0}")
+            logger.debug(f"Полный ответ от DeepSeek: {response}")
             
-            return response.strip() if response else "I understand. Please continue sharing your thoughts."
+            if response and response.strip():
+                final_response = response.strip()
+                logger.info(f"Возвращаем ответ DeepSeek: {final_response[:100]}...")
+                return final_response
+            else:
+                logger.warning("DeepSeek вернул пустой ответ, используем fallback")
+                return self._get_fallback_response(language_level)
             
         except Exception as e:
             logger.error(f"Ошибка при обращении к DeepSeek R1: {e}")
