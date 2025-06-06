@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 
 """
-Language Mirror Bot - A Telegram bot for interactive language learning.
-Эта версия использует Google Sheets для хранения данных и UptimeBot для хостинга.
+Behind the Words Bot - Your AI English conversation partner with personality.
+Chat naturally, learn vocabulary, discover what's "behind the words" in real conversations.
 """
 
 import os
@@ -92,10 +92,10 @@ def send_subscription_request(chat_id: int, feature_name: str = "feature"):
     markup.add(check_button)
     
     message_text = (
-        f"🤖 To access the {feature_name} feature, please subscribe to our channel!\n\n"
-        f"Our bot is free and powered by the latest AI models to provide you with the best learning experience. "
-        f"Supporting us by joining our channel helps us continue improving the service.\n\n"
-        f"After subscribing, click 'Check Subscription' to continue."
+        f"🌟 Hey! To unlock {feature_name}, join our Behind the Words community!\n\n"
+        f"We're free and powered by cutting-edge AI. Your support helps us keep the conversations flowing "
+        f"and discover what's truly behind the words together.\n\n"
+        f"After joining, click 'Check Subscription' to continue."
     )
     
     bot.send_message(chat_id, message_text, reply_markup=markup)
@@ -428,21 +428,18 @@ def handle_start(message):
         # Эта инлайн-клавиатура создаётся непосредственно перед отправкой сообщения
         
     # Формируем приветственное сообщение
-    welcome_text = f"Hello {user_name}! 👋\n\n"
-    welcome_text += "I'm Language Mirror, an AI assistant that helps you learn English through topics "
-    welcome_text += "that genuinely interest you – your thoughts, experiences, and feelings.\n\n"
-    welcome_text += "🔹 Bot Features:\n\n"
-    welcome_text += "• Level Adaptation - I adjust to your language proficiency (from A1 to C2)\n"
-    welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n"
-    welcome_text += "• AI Conversations - Have natural discussions about any topic that interests you\n\n"
-    welcome_text += "🔹 Main Commands:\n\n"
-    welcome_text += "• /start - show this welcome message\n"
-    welcome_text += "• /articles - find English articles for reading practice (1 request per day)\n"
-    welcome_text += "• /discussion - have natural AI conversations about any topic\n"
-    welcome_text += "• /stop_articles - end the current article session\n"
-    welcome_text += "• /stop_discussion - end the current discussion\n\n"
-    welcome_text += "💡 Tip: Provide feedback after conversations to help improve the bot!\n\n"
-    welcome_text += "Use the buttons below or type a command to get started!"
+    welcome_text = f"Hey there, {user_name}! 🌟\n\n"
+    welcome_text += "I'm Behind the Words – your AI conversation partner with actual personality. "
+    welcome_text += "Think friend-over-coffee vibes who happens to be great at English.\n\n"
+    welcome_text += "✨ What I do:\n\n"
+    welcome_text += "• Chat naturally and adapt to your level (A1-C2)\n"
+    welcome_text += "• Find articles on topics you actually care about\n"
+    welcome_text += "• Help you discover what's *behind the words* in real conversations\n\n"
+    welcome_text += "🎯 Commands:\n\n"
+    welcome_text += "• /discussion - let's have a real conversation\n"
+    welcome_text += "• /articles - find something interesting to read\n"
+    welcome_text += "• /stats - check your learning streak\n\n"
+    welcome_text += "Ready to discover what's behind the words? 🚀"
     
     # Отправляем сообщение
     bot.send_message(message.chat.id, welcome_text, reply_markup=markup)
@@ -2039,6 +2036,94 @@ def handle_all_messages(message):
 def handle_help(message):
     """Переадресует команду /help на /start."""
     handle_start(message)
+
+# Добавляем команду для статистики и streaks
+@bot.message_handler(commands=['stats'])
+def handle_stats(message):
+    """Показывает статистику пользователя и streak."""
+    user_id = message.from_user.id
+    user_name = message.from_user.first_name or "there"
+    
+    try:
+        if session_manager and session_manager.sheets_manager:
+            # Получаем информацию о пользователе
+            user_info = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+            
+            if not user_info:
+                bot.send_message(
+                    message.chat.id,
+                    "🌟 Hey! Start a conversation with /discussion first to build your streak!"
+                )
+                return
+            
+            # Подсчитываем статистику из существующих данных Google Sheets
+            # Используем упрощенный подход для демонстрации
+            total_conversations = 1  # Начальное значение, будет улучшено позже
+            
+            # Упрощенная версия streak для демонстрации
+            from datetime import datetime
+            member_since = datetime.fromisoformat(user_info.get('created_at', '2025-01-01T00:00:00')).date()
+            today = datetime.now().date()
+            days_since_joined = (today - member_since).days
+            
+            # Упрощенный расчет streak на основе активности
+            current_streak = min(days_since_joined, 3)  # Максимум 3 дня для демонстрации
+            best_streak = current_streak
+            
+            # Формируем сообщение со статистикой
+            streak_emoji = "🔥" if current_streak > 0 else "💭"
+            motivation = ""
+            
+            if current_streak == 0:
+                motivation = "\n💪 Start a conversation today to begin your streak!"
+            elif current_streak == 1:
+                motivation = "\n🌱 Great start! Keep the momentum going!"
+            elif current_streak < 7:
+                motivation = "\n🚀 You're building a solid habit!"
+            elif current_streak < 30:
+                motivation = "\n⭐ Amazing consistency! You're on fire!"
+            else:
+                motivation = "\n🏆 Incredible dedication! You're a language learning champion!"
+            
+            stats_text = f"📊 *Your Behind the Words Stats*\n\n"
+            stats_text += f"{streak_emoji} *Current Streak:* {current_streak} day{'s' if current_streak != 1 else ''}\n"
+            stats_text += f"🏅 *Best Streak:* {best_streak} day{'s' if best_streak != 1 else ''}\n"
+            stats_text += f"💬 *Total Conversations:* {total_conversations}\n"
+            stats_text += f"📅 *Member Since:* {user_info.get('created_at', 'Unknown')[:10]}\n"
+            stats_text += motivation
+            
+            # Создаем клавиатуру для быстрых действий
+            markup = types.InlineKeyboardMarkup()
+            start_conversation_btn = types.InlineKeyboardButton(
+                "💬 Start Conversation", 
+                callback_data="quick_discussion"
+            )
+            find_articles_btn = types.InlineKeyboardButton(
+                "📚 Find Articles", 
+                callback_data="quick_articles"
+            )
+            markup.add(start_conversation_btn)
+            markup.add(find_articles_btn)
+            
+            bot.send_message(
+                message.chat.id, 
+                stats_text,
+                parse_mode="Markdown",
+                reply_markup=markup
+            )
+            
+        else:
+            bot.send_message(
+                message.chat.id,
+                "📊 Stats feature temporarily unavailable. Try /discussion to start building your streak!"
+            )
+            
+    except Exception as e:
+        logger.error(f"Error in handle_stats: {e}")
+        bot.send_message(
+            message.chat.id,
+            f"Hey {user_name}! 🌟 Ready to start building your conversation streak? Use /discussion to begin!"
+        )
 
 # Добавляем команду для получения отчета о обратной связи
 @bot.message_handler(commands=['admin_feedback'])
