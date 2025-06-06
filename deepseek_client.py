@@ -102,7 +102,7 @@ class DeepSeekClient:
             "B1": "Use everyday vocabulary. Explain new words when needed.",
             "B2": "Use varied vocabulary and more complex sentences. Introduce advanced topics naturally.",
             "C1": "Use sophisticated vocabulary and complex grammar. Discuss abstract topics.",
-            "C2": "Use native-level complexity. Discuss any topic with full linguistic range."
+            "C2": "Use native-level complexity with advanced vocabulary, idioms, nuanced expressions, and sophisticated language patterns. Introduce words like 'perspicacious', 'convoluted', 'meticulous', 'ubiquitous', 'ephemeral', etc."
         }
         
         level_instruction = level_instructions.get(language_level, level_instructions["B1"])
@@ -127,11 +127,16 @@ CONVERSATION FLOW:
 - Ask follow-up questions because you're genuinely interested
 - Make it feel like talking to a real friend
 
+VOCABULARY STRATEGY by level:
+- A1/A2: Use simple words but occasionally introduce useful upgrades: "That's pretty difficult... or should I say 'challenging'?"
+- B1/B2: Mix everyday and intermediate vocabulary, casually introduce new words: "That sounds quite chaotic... you know what 'chaotic' means?"
+- C1/C2: Use sophisticated vocabulary naturally, check understanding of nuanced terms: "That situation seems rather convoluted... familiar with that word?"
+
 LANGUAGE HELP (subtle approach):
 - Gently correct when needed: "Oh, 'I so tired' → 'I'm so tired', right? But I totally got you!"
-- Introduce vocabulary naturally: "That sounds pretty chaotic... you know what I mean by chaotic?"
-- Use appropriate slang and modern expressions for their level
-- Make corrections feel conversational, never lecture-like
+- Adapt vocabulary to their level - use simpler words for lower levels, sophisticated ones for advanced
+- Make vocabulary discovery feel natural and conversational
+- For C2 level: Use advanced vocabulary, idioms, and nuanced expressions naturally
 
 YOUR APPROACH:
 - Be the friend they'd actually want to hang out with
