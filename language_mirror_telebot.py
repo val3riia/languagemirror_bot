@@ -362,12 +362,14 @@ def handle_start(message):
     start_button = types.KeyboardButton('/start')
     articles_button = types.KeyboardButton('/articles')
     discussion_button = types.KeyboardButton('/discussion')
+    stats_button = types.KeyboardButton('/stats')
     stop_articles_button = types.KeyboardButton('/stop_articles')
     stop_discussion_button = types.KeyboardButton('/stop_discussion')
     
     # Добавляем основные кнопки
     markup.add(start_button)
     markup.add(articles_button, discussion_button)
+    markup.add(stats_button)
     markup.add(stop_articles_button, stop_discussion_button)
     
     # Проверяем, является ли пользователь администратором
