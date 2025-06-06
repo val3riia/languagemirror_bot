@@ -165,10 +165,16 @@ class SheetSessionManager:
                 user = self.sheets_manager.get_user_by_telegram_id(user_id)
                 
                 if not user:
-                    # Создаем нового пользователя
-                    user = self.sheets_manager.create_user(telegram_id=user_id)
+                    # Создаем нового пользователя с пустыми данными (будет обновлен позже)
+                    user = self.sheets_manager.create_user(
+                        telegram_id=user_id,
+                        username="",
+                        first_name="", 
+                        last_name=""
+                    )
                     if not user:
                         raise Exception(f"Не удалось создать пользователя с ID {user_id}")
+                    logger.info(f"Created new user with telegram_id {user_id} during session creation")
                 
                 # Получаем активную сессию
                 active_session = self.sheets_manager.get_active_session(user["id"])

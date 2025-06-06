@@ -525,13 +525,29 @@ def handle_start(message):
                 # Создаем нового пользователя только если его нет
                 session_manager.sheets_manager.create_user(
                     telegram_id=message.from_user.id,
-                    username=message.from_user.username or "",
+                    username=f"@{message.from_user.username}" if message.from_user.username else "",
                     first_name=message.from_user.first_name or "",
                     last_name=message.from_user.last_name or ""
                 )
-                logger.info(f"New user created: {message.from_user.id} ({message.from_user.username})")
+                logger.info(f"New user created: {message.from_user.id} (@{message.from_user.username})")
             else:
-                logger.info(f"Existing user found: {message.from_user.id} ({message.from_user.username})")
+                # Обновляем информацию существующего пользователя
+                updated_username = f"@{message.from_user.username}" if message.from_user.username else ""
+                if (existing_user.get('username') != updated_username or 
+                    existing_user.get('first_name') != (message.from_user.first_name or "") or
+                    existing_user.get('last_name') != (message.from_user.last_name or "")):
+                    
+                    session_manager.sheets_manager.update_user(
+                        existing_user['id'],
+                        {
+                            'username': updated_username,
+                            'first_name': message.from_user.first_name or "",
+                            'last_name': message.from_user.last_name or ""
+                        }
+                    )
+                    logger.info(f"User info updated: {message.from_user.id} (@{message.from_user.username})")
+                else:
+                    logger.info(f"Existing user found: {message.from_user.id} (@{message.from_user.username})")
     except Exception as e:
         logger.error(f"Error updating user info: {str(e)}")
 
