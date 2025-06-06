@@ -514,6 +514,9 @@ def handle_articles(message):
     
 
     
+    username = message.from_user.username if hasattr(message.from_user, 'username') else ""
+    logger.info(f"Обработка команды /articles от пользователя {username} (ID: {user_id})")
+    
     # Завершаем любую предыдущую сессию
     try:
         if session_manager:
@@ -552,98 +555,50 @@ def handle_articles(message):
     inline_markup.add(intermediate_button, upper_button)
     inline_markup.add(advanced_button, proficient_button)
     
-    username = message.from_user.username if hasattr(message.from_user, 'username') else ""
-    logger.info(f"Обработка команды /articles от пользователя {username} (ID: {user_id})")
+    # Проверяем лимит на количество запросов в день
+    from datetime import date
+    today = date.today()
     
-    # Проверяем, есть ли у пользователя активная сессия
-    active_session = False
+    # Проверка на администратора (им доступно неограниченное количество запросов)
+    is_admin = False
     
-    if session_manager:
-        # Используем Google Sheets через session_manager
+    # Проверяем все возможные варианты
+    if username and username.lower() in ADMIN_USERS:
+        is_admin = True
+        logger.info(f"Пользователь {username} (ID: {user_id}) авторизован как администратор")
+    elif str(user_id) in ADMIN_USERS.values():
+        is_admin = True
+        logger.info(f"Пользователь с ID {user_id} авторизован как администратор")
+    
+    # Проверяем лимиты только для не-администраторов
+    if not is_admin and session_manager and session_manager.sheets_manager:
         try:
-            session = session_manager.get_session(user_id)
-            if session:
-                active_session = True
-                bot.send_message(
-                    message.chat.id,
-                    "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_articles, чтобы завершить текущую беседу."
+            # Проверяем данные пользователя
+            user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+            
+            if user_data:
+                # Проверяем дату последнего обсуждения
+                if user_data.get('last_articles_date') == str(today):
+                    if user_data.get('articles_count', 0) >= 3:
+                        bot.send_message(
+                            message.chat.id,
+                            "You've reached your daily limit for article searches. Try again tomorrow or share feedback to get bonus searches!"
+                        )
+                        logger.info(f"Пользователь {username} (ID: {user_id}) достиг лимита запросов")
+                        return
+            else:
+                # Создаем нового пользователя
+                session_manager.sheets_manager.create_user(
+                    telegram_id=user_id,
+                    username=username or '',
+                    first_name=message.from_user.first_name or '',
+                    last_name=message.from_user.last_name or ''
                 )
-                logger.info(f"Пользователь {username} (ID: {user_id}) уже имеет активную сессию")
-                return
+                logger.info(f"Создан новый пользователь: {username} (ID: {user_id})")
         except Exception as e:
-            logger.error(f"Ошибка при проверке сессии: {str(e)}")
-    else:
-        # Используем локальное хранилище
-        if user_id in user_sessions:
-            active_session = True
-            bot.send_message(
-                message.chat.id,
-                "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_articles, чтобы завершить текущую беседу."
-            )
-            return
-    
-    # Если сессия не активна, проверяем лимиты на использование
-    if not active_session:
-        # Исправляем проблему с markup
-        inline_markup = types.InlineKeyboardMarkup(row_width=2)
-        beginner_button = types.InlineKeyboardButton("A1 - Beginner", callback_data="level_A1")
-        elementary_button = types.InlineKeyboardButton("A2 - Elementary", callback_data="level_A2")
-        intermediate_button = types.InlineKeyboardButton("B1 - Intermediate", callback_data="level_B1")
-        upper_button = types.InlineKeyboardButton("B2 - Upper Intermediate", callback_data="level_B2")
-        advanced_button = types.InlineKeyboardButton("C1 - Advanced", callback_data="level_C1")
-        proficient_button = types.InlineKeyboardButton("C2 - Proficient", callback_data="level_C2")
-        
-        # Добавляем кнопки на инлайн-клавиатуру
-        inline_markup.add(beginner_button, elementary_button)
-        inline_markup.add(intermediate_button, upper_button)
-        inline_markup.add(advanced_button, proficient_button)
-        
-        # Проверяем лимит на количество запросов в день
-        from datetime import date
-        today = date.today()
-        
-        # Проверка на администратора (им доступно неограниченное количество запросов)
-        is_admin = False
-        
-        # Проверяем все возможные варианты
-        if username and username.lower() in ADMIN_USERS:
-            is_admin = True
-            logger.info(f"Пользователь {username} (ID: {user_id}) авторизован как администратор")
-        elif str(user_id) in ADMIN_USERS.values():
-            is_admin = True
-            logger.info(f"Пользователь с ID {user_id} авторизован как администратор")
-        
-        # Переменная today объявлена выше, а is_admin определена здесь - проблем быть не должно
-        
-        # Проверяем лимиты только для не-администраторов
-        if not is_admin and session_manager and session_manager.sheets_manager:
-            try:
-                # Проверяем данные пользователя
-                user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
-                
-                if user_data:
-                    # Проверяем дату последнего обсуждения
-                    if user_data.get('last_articles_date') == str(today):
-                        if user_data.get('articles_count', 0) >= 3:
-                            bot.send_message(
-                                message.chat.id,
-                                "Вы достигли лимита запросов на сегодня. Попробуйте завтра или оставьте обратную связь с помощью /feedback, чтобы получить бонусные запросы."
-                            )
-                            logger.info(f"Пользователь {username} (ID: {user_id}) достиг лимита запросов")
-                            return
-                else:
-                    # Создаем нового пользователя
-                    session_manager.sheets_manager.create_user(
-                        telegram_id=user_id,
-                        username=username or '',
-                        first_name=message.from_user.first_name or '',
-                        last_name=message.from_user.last_name or ''
-                    )
-                    logger.info(f"Создан новый пользователь: {username} (ID: {user_id})")
-            except Exception as e:
-                logger.error(f"Ошибка при проверке данных пользователя: {str(e)}")
-                # В случае ошибки разрешаем доступ
-                pass
+            logger.error(f"Ошибка при проверке данных пользователя: {str(e)}")
+            # В случае ошибки разрешаем доступ
+            pass
     
     # Словарь уровней владения языком
     LANGUAGE_LEVELS = {
