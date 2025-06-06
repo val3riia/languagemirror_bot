@@ -67,6 +67,10 @@ class SheetsManager:
         self.retry_delay = retry_delay
         self.client = None
         self.spreadsheet = None
+        
+        # Кэширование для уменьшения API вызовов
+        self._user_cache = {}
+        self._cache_timeout = 300  # 5 минут
 
         # Проверка наличия необходимых параметров
         if not self.spreadsheet_key:

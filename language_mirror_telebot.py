@@ -1714,15 +1714,39 @@ def handle_all_messages(message):
         # Сохраняем обратную связь с комментарием
         if session_manager and session_manager.sheets_manager:
             try:
+                # Получаем или создаем пользователя
                 user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+                
+                if not user_data:
+                    # Создаем пользователя, если его нет
+                    try:
+                        user_info = bot.get_chat(user_id)
+                        username = getattr(user_info, 'username', '') or ''
+                        first_name = getattr(user_info, 'first_name', '') or ''
+                        last_name = getattr(user_info, 'last_name', '') or ''
+                    except Exception:
+                        username = ''
+                        first_name = 'Unknown'
+                        last_name = ''
+                    
+                    user_data = session_manager.sheets_manager.create_user(
+                        telegram_id=user_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name
+                    )
+                
                 if user_data and isinstance(user_data, dict) and 'id' in user_data:
+                    # Добавляем обратную связь с правильными колонками
                     session_manager.sheets_manager.add_feedback(
                         user_id=int(user_data["id"]),
                         rating=feedback_rating,
                         comment=comment if comment else "No comment provided",
-                        activity_type=feedback_session_type
+                        activity_type=feedback_session_type  # Это колонка "command"
                     )
-                    logger.info(f"Записана обратная связь с комментарием: пользователь {user_id}, {feedback_session_type}, рейтинг {feedback_rating}")
+                    logger.info(f"Записана обратная связь с комментарием: пользователь {user_id}, команда {feedback_session_type}, рейтинг {feedback_rating}, комментарий: {comment}")
+                else:
+                    logger.error(f"Не удалось получить или создать пользователя для telegram_id {user_id}")
             except Exception as e:
                 logger.error(f"Ошибка при сохранении обратной связи с комментарием: {e}")
         
