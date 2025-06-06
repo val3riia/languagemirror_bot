@@ -669,12 +669,29 @@ class SheetsManager:
             user_id_str = str(user_id)
             all_sessions = worksheet.get_all_records()
             
-            # Находим активную сессию
-            active_session = None
+            # Находим самую новую активную сессию
+            active_sessions = []
             for session in all_sessions:
                 if str(session.get("user_id")) == user_id_str and session.get("is_active") in (True, "TRUE", "True", "true", 1, "1"):
+                    active_sessions.append(session)
+            
+            # Если нет активных сессий, возвращаем None
+            if not active_sessions:
+                return None
+            
+            # Если есть несколько активных сессий, берем самую новую по ID
+            active_session = None
+            max_id = 0
+            for session in active_sessions:
+                session_id = session.get("id", 0)
+                if isinstance(session_id, str) and session_id.isdigit():
+                    session_id = int(session_id)
+                elif not isinstance(session_id, int):
+                    session_id = 0
+                    
+                if session_id > max_id:
+                    max_id = session_id
                     active_session = session
-                    break
             
             if not active_session:
                 return None
