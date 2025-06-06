@@ -149,9 +149,12 @@ def record_user_activity(user_id: int, activity_type: str):
             # Получаем информацию о пользователе из Telegram
             try:
                 user_info = bot.get_chat(user_id)
-                username = user_info.username if hasattr(user_info, 'username') else ""
-                first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
-                last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
+                username = getattr(user_info, 'username', '') or ''
+                first_name = getattr(user_info, 'first_name', '') or ''
+                last_name = getattr(user_info, 'last_name', '') or ''
+                # Добавляем @ к username если он существует
+                if username and not username.startswith('@'):
+                    username = f"@{username}"
             except:
                 username = ""
                 first_name = ""
@@ -172,11 +175,11 @@ def record_user_activity(user_id: int, activity_type: str):
             # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
             session_manager.sheets_manager.add_feedback(
                 telegram_id=user_id,
-                username=username,
-                first_name=first_name,
-                last_name=last_name,
+                username=username or "",
+                first_name=first_name or "",
+                last_name=last_name or "",
                 rating=0,  # 0 означает что это запись активности, а не обратная связь
-                comment=f"User accessed {activity_type} feature",
+                comment="",  # Оставляем пустым для записей активности
                 activity_type=activity_type
             )
             logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
@@ -859,14 +862,26 @@ def handle_discussion_level(call):
         }
     
     # Приветственное сообщение для начала дискуссии
+    welcome_text = f"Perfect! I'll adapt to your {level} level.\n\n"
+    
+    # Добавляем стартовый вопрос в зависимости от уровня
+    if level in ["A1", "A2"]:
+        welcome_text += "Let's start simple! Tell me about your day. What did you do today?"
+    elif level in ["B1", "B2"]:
+        welcome_text += "What's on your mind today? Share anything you'd like to discuss — your thoughts, experiences, or questions about life."
+    else:  # C1, C2
+        welcome_text += "I'm curious to hear your thoughts! What topic has been occupying your mind lately? Let's dive into a meaningful conversation."
+    
+    welcome_text += f"\n\nUse /stop_discussion when you're ready to end our chat."
+    
     bot.edit_message_text(
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
-        text=f"Perfect! I'll adapt to your {level} level.\n\n"
-             f"What's on your mind today? Share anything you'd like to discuss — "
-             f"your thoughts, experiences, or questions about life. I'm here to have a genuine conversation with you!\n\n"
-             f"Use /stop_discussion when you're ready to end our chat."
+        text=welcome_text
     )
+    
+    # Отвечаем на callback, чтобы убрать "загрузку"
+    bot.answer_callback_query(call.id, f"Discussion started at {level} level!")
 
 @bot.message_handler(commands=['stop_articles', 'stop_discussion'])
 def handle_stop_discussion(message):
