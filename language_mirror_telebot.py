@@ -1639,9 +1639,12 @@ Adapt your style to the user's level ({}) if they specify it.""".format(language
 @bot.message_handler(func=lambda message: True)
 def handle_all_messages(message):
     """Обрабатывает все текстовые сообщения."""
-    # Обрабатываем команду /admin_feedback отдельно
+    # Обрабатываем команды отдельно
     if message.text == '/admin_feedback':
         handle_admin_feedback(message)
+        return
+    elif message.text == '/stats':
+        handle_stats(message)
         return
     
     # Игнорируем остальные команды
