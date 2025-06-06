@@ -48,8 +48,8 @@ if not TELEGRAM_TOKEN:
 bot = telebot.TeleBot(TELEGRAM_TOKEN)
 
 # Настройки для проверки подписки
-CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@your_channel")  # Замените на ваш канал
-CHANNEL_CHAT_ID = os.environ.get("CHANNEL_CHAT_ID", "-1001234567890")  # Замените на ID вашего канала
+CHANNEL_USERNAME = os.environ.get("CHANNEL_USERNAME", "@behindtheword")
+CHANNEL_CHAT_ID = os.environ.get("CHANNEL_CHAT_ID", "@behindtheword")  # Используем username как fallback
 
 def check_user_subscription(user_id: int) -> bool:
     """
