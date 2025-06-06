@@ -624,9 +624,11 @@ def handle_discussion_level(call):
     level = call.data.split('_')[-1]
     user_id = call.from_user.id
     
-    # Обновляем информацию о пользователе
+    # Обновляем информацию о пользователе (если необходимо)
     try:
-        update_user_info(call.from_user)
+        if session_manager and hasattr(session_manager, 'sheets_manager'):
+            # Можем добавить логику обновления пользователя здесь при необходимости
+            pass
     except Exception as e:
         logger.error(f"Error updating user info: {str(e)}")
     
@@ -771,6 +773,53 @@ def handle_feedback_bonus(call):
             message_id=call.message.message_id,
             text="Sorry, there was an error processing your request. Please try again later."
         )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('discussion_feedback_'))
+def handle_discussion_feedback(call):
+    """Обрабатывает обратную связь для дискуссий."""
+    user_id = call.from_user.id
+    feedback_type = call.data.split('_')[2]  # discussion_feedback_helpful -> helpful
+    
+    # Сопоставляем типы обратной связи с оценками
+    rating_map = {
+        "helpful": "👍 Helpful",
+        "okay": "🤔 Okay", 
+        "not": "👎 Not really"
+    }
+    
+    # Сохраняем обратную связь в лог
+    logger.info(f"User {user_id} gave discussion feedback: {rating_map.get(feedback_type)}")
+    
+    # Запрашиваем дополнительный комментарий (но без бонуса)
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"Thank you for your feedback: {rating_map.get(feedback_type)}!\n\n"
+        "Would you like to add any comments about our discussion? "
+        "Just type your thoughts, or send /skip to finish."
+    )
+    
+    # Сохраняем данные обратной связи для последующего использования
+    if session_manager is not None:
+        try:
+            session_manager.create_session(user_id, {
+                "feedback_type": feedback_type,
+                "feedback_mode": "discussion",
+                "waiting_for_comment": True,
+                "last_active": time.time()
+            })
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении данных обратной связи: {e}")
+    else:
+        user_sessions[user_id] = {
+            "feedback_type": feedback_type,
+            "feedback_mode": "discussion", 
+            "waiting_for_comment": True,
+            "last_active": time.time()
+        }
+    
+    # Регистрируем обработчик следующего сообщения
+    bot.register_next_step_handler(call.message, handle_discussion_feedback_comment)
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not (call.data == "feedback_bonus" or call.data == "feedback_skip"))
 def handle_feedback(call):
@@ -963,6 +1012,92 @@ def handle_feedback_comment(message):
         message.chat.id,
         "Thank you for your comments! Your feedback helps me improve.\n\n"
         "Feel free to use /articles anytime you want to practice English again."
+    )
+
+def handle_discussion_feedback_comment(message):
+    """Обрабатывает комментарии к обратной связи для дискуссий."""
+    user_id = message.from_user.id
+    comment = message.text
+    
+    if comment.lower() == "/skip":
+        bot.send_message(
+            message.chat.id,
+            "Thanks again for your feedback! Use /discussion anytime you want to have another conversation."
+        )
+        
+        # Завершаем сессию
+        if session_manager is not None:
+            try:
+                session_manager.end_session(user_id)
+            except Exception as e:
+                logger.error(f"Ошибка при завершении сессии: {e}")
+        else:
+            if user_id in user_sessions:
+                del user_sessions[user_id]
+        
+        return
+    
+    # Получаем данные обратной связи
+    feedback_type = "okay"  # значение по умолчанию
+    
+    if session_manager is not None:
+        try:
+            session = session_manager.get_session(user_id)
+            if session:
+                feedback_type = session.get("feedback_type", "okay")
+        except Exception as e:
+            logger.error(f"Ошибка при получении данных обратной связи: {e}")
+    else:
+        if user_id in user_sessions:
+            feedback_type = user_sessions[user_id].get("feedback_type", "okay")
+    
+    # Получаем информацию о пользователе
+    username = message.from_user.username if hasattr(message.from_user, 'username') else "Unknown"
+    first_name = message.from_user.first_name if hasattr(message.from_user, 'first_name') else "Unknown"
+    last_name = message.from_user.last_name if hasattr(message.from_user, 'last_name') else ""
+    
+    # Сохраняем обратную связь в Google Sheets (БЕЗ бонуса за дискуссии)
+    if session_manager is not None:
+        try:
+            if hasattr(session_manager, 'sheets_manager') and session_manager.sheets_manager:
+                # Получаем пользователя или создаем нового
+                sheet_user = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+                if not sheet_user:
+                    sheet_user = session_manager.sheets_manager.create_user(
+                        telegram_id=user_id,
+                        username=username,
+                        first_name=first_name,
+                        last_name=last_name
+                    )
+                    logger.info(f"Создан новый пользователь: {username} (ID: {user_id})")
+                    
+                # Преобразуем rating в числовую оценку
+                rating_value = {
+                    "helpful": 5,
+                    "okay": 3,
+                    "not": 1,
+                    "unknown": 3
+                }.get(feedback_type, 3)
+                
+                # Добавляем запись обратной связи в Google Sheets
+                if sheet_user and isinstance(sheet_user, dict) and 'id' in sheet_user:
+                    feedback_result = session_manager.sheets_manager.add_feedback(
+                        user_id=int(sheet_user["id"]),
+                        rating=rating_value,
+                        comment=f"[Discussion] {comment}"  # Помечаем как обратную связь о дискуссии
+                    )
+                    logger.info(f"Обратная связь о дискуссии сохранена: пользователь {user_id}, оценка {rating_value}")
+                else:
+                    logger.error(f"Не удалось получить данные пользователя для ID {user_id}")
+            else:
+                logger.warning("Google Sheets недоступен для сохранения обратной связи")
+        except Exception as e:
+            logger.error(f"Ошибка при сохранении обратной связи о дискуссии: {str(e)}")
+    
+    bot.send_message(
+        message.chat.id,
+        "Thank you for your comments! Your feedback helps me improve.\n\n"
+        "Feel free to use /discussion anytime you want to have another conversation."
     )
     
     # Очищаем данные обратной связи из временного хранилища
@@ -1299,6 +1434,95 @@ def handle_all_messages(message):
                     "last_active": time.time(),
                     "waiting_for_feedback": True
                 }
+        
+        return
+    
+    elif session_mode == "discussion":
+        # Режим дискуссии - используем DeepSeek для беседы
+        try:
+            deepseek_client = get_deepseek_client()
+            if deepseek_client is None:
+                bot.send_message(
+                    message.chat.id,
+                    "Sorry, the discussion feature is temporarily unavailable. Please try again later."
+                )
+                return
+            
+            # Получаем историю сообщений
+            conversation_history = []
+            if session_manager is not None:
+                try:
+                    conversation_history = session_manager.get_messages(user_id)
+                except Exception as e:
+                    logger.error(f"Ошибка при получении истории сообщений: {e}")
+            else:
+                conversation_history = user_sessions[user_id].get("messages", [])
+            
+            # Генерируем ответ с помощью DeepSeek
+            response = deepseek_client.generate_discussion_response(
+                user_message, 
+                language_level, 
+                conversation_history
+            )
+            
+            # Добавляем ответ бота в сессию
+            if session_manager is not None:
+                try:
+                    session_manager.add_message_to_session(user_id, "assistant", response)
+                except Exception as e:
+                    logger.error(f"Ошибка при добавлении ответа бота в сессию: {e}")
+            else:
+                user_sessions[user_id]["messages"].append({"role": "assistant", "content": response})
+                user_sessions[user_id]["last_active"] = time.time()
+            
+            # Отправляем ответ пользователю
+            bot.send_message(message.chat.id, response)
+            
+            # Проверяем, нужно ли завершить беседу (после 8-10 сообщений)
+            message_count = len(conversation_history) + 1  # +1 для текущего сообщения
+            
+            if message_count >= 8:  # Завершаем после 8 сообщений от пользователя
+                logger.info(f"Автоматическое завершение дискуссии после {message_count} сообщений для пользователя {user_id}")
+                
+                # Создаем клавиатуру для обратной связи
+                markup = types.InlineKeyboardMarkup(row_width=3)
+                markup.add(
+                    types.InlineKeyboardButton("👍 Helpful", callback_data="discussion_feedback_helpful"),
+                    types.InlineKeyboardButton("🤔 Okay", callback_data="discussion_feedback_okay"),
+                    types.InlineKeyboardButton("👎 Not really", callback_data="discussion_feedback_not_helpful")
+                )
+                
+                # Отправляем сообщение о завершении
+                bot.send_message(
+                    message.chat.id,
+                    "That was a great conversation! I really enjoyed discussing this with you. "
+                    "Feel free to start another discussion anytime with /discussion.\n\nHow was our conversation for you?",
+                    reply_markup=markup
+                )
+                
+                # Завершаем сессию
+                if session_manager is not None:
+                    try:
+                        session_manager.end_session(user_id)
+                    except Exception as e:
+                        logger.error(f"Ошибка при завершении дискуссии в session_manager: {e}")
+                else:
+                    if user_id in user_sessions:
+                        user_sessions[user_id] = {
+                            "last_active": time.time(),
+                            "waiting_for_discussion_feedback": True
+                        }
+            
+            return
+            
+        except Exception as e:
+            logger.error(f"Ошибка при обработке дискуссии: {e}")
+            bot.send_message(
+                message.chat.id,
+                "I'm having trouble processing your message right now. Please try again or use /discussion to start a new conversation."
+            )
+            return
+    
     else:
         # Стандартный режим разговора
         # Получаем историю сообщений для контекста
