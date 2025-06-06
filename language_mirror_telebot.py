@@ -599,7 +599,7 @@ def handle_articles(message):
             if session:
                 active_session = True
                 bot.send_message(
-                    chat_id,
+                    message.chat.id,
                     "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_articles, чтобы завершить текущую беседу."
                 )
                 logger.info(f"Пользователь {username} (ID: {user_id}) уже имеет активную сессию")
@@ -611,7 +611,7 @@ def handle_articles(message):
         if user_id in user_sessions:
             active_session = True
             bot.send_message(
-                chat_id,
+                message.chat.id,
                 "Вы уже ведете поиск статей со мной. Продолжайте общение или используйте /stop_articles, чтобы завершить текущую беседу."
             )
             return
@@ -660,7 +660,7 @@ def handle_articles(message):
                     if user_data.get('last_articles_date') == str(today):
                         if user_data.get('articles_count', 0) >= 3:
                             bot.send_message(
-                                chat_id,
+                                message.chat.id,
                                 "Вы достигли лимита запросов на сегодня. Попробуйте завтра или оставьте обратную связь с помощью /feedback, чтобы получить бонусные запросы."
                             )
                             logger.info(f"Пользователь {username} (ID: {user_id}) достиг лимита запросов")
@@ -691,7 +691,7 @@ def handle_articles(message):
     
     # Отправляем сообщение для выбора уровня
     bot.send_message(
-        chat_id,
+        message.chat.id,
         "Пожалуйста, выберите ваш уровень владения английским языком:",
         reply_markup=inline_markup
     )
@@ -1812,21 +1812,15 @@ def handle_all_messages(message):
             if message_count >= 8:  # Завершаем после 8 сообщений от пользователя
                 logger.info(f"Автоматическое завершение дискуссии после {message_count} сообщений для пользователя {user_id}")
                 
-                # Создаем клавиатуру для обратной связи
-                markup = types.InlineKeyboardMarkup(row_width=3)
-                markup.add(
-                    types.InlineKeyboardButton("👍 Helpful", callback_data="discussion_feedback_helpful"),
-                    types.InlineKeyboardButton("🤔 Okay", callback_data="discussion_feedback_okay"),
-                    types.InlineKeyboardButton("👎 Not really", callback_data="discussion_feedback_not_helpful")
-                )
-                
                 # Отправляем сообщение о завершении
                 bot.send_message(
                     message.chat.id,
                     "That was a great conversation! I really enjoyed discussing this with you. "
-                    "Feel free to start another discussion anytime with /discussion.\n\nHow was our conversation for you?",
-                    reply_markup=markup
+                    "Feel free to start another discussion anytime with /discussion."
                 )
+                
+                # Запрашиваем обратную связь
+                request_feedback(message.chat.id, "discussion")
                 
                 # Завершаем сессию
                 if session_manager is not None:
