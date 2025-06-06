@@ -532,6 +532,7 @@ def handle_start(message):
 def handle_articles(message):
     """Обрабатывает команду /articles для поиска статей."""
     user_id = message.from_user.id
+    logger.info(f"Processing /articles command from user {user_id}")
     
     # Проверяем подписку на канал
     if not check_user_subscription(user_id):
@@ -774,6 +775,7 @@ def handle_language_level(call):
 def handle_discussion(message):
     """Обрабатывает команду /discussion для беседы с ИИ."""
     user_id = message.from_user.id
+    logger.info(f"Processing /discussion command from user {user_id}")
     
     # Проверяем подписку на канал
     if not check_user_subscription(user_id):
@@ -1647,7 +1649,10 @@ def handle_all_messages(message):
     """Обрабатывает все текстовые сообщения."""
     # Игнорируем команды
     if message.text.startswith('/'):
+        logger.info(f"Ignoring command message: {message.text}")
         return
+    
+    logger.info(f"Processing message from user {message.from_user.id}: {message.text}")
     
     user_id = message.from_user.id
     user_message = message.text
@@ -1662,11 +1667,15 @@ def handle_all_messages(message):
         try:
             session = session_manager.get_session(user_id)
             logger.info(f"Retrieved session for user {user_id}: {session}")
-            if session and "language_level" in session:
-                session_exists = True
-                language_level = session.get("language_level", "B1")
-                session_mode = session.get("mode", "conversation")
-                logger.info(f"Session found: level={language_level}, mode={session_mode}")
+            if session and isinstance(session, dict):
+                # Проверяем наличие языкового уровня в сессии
+                if "language_level" in session or "data" in session:
+                    session_exists = True
+                    # Пытаемся получить данные из основного уровня или из data
+                    session_data = session.get("data", session) if "data" in session else session
+                    language_level = session_data.get("language_level", "B1")
+                    session_mode = session_data.get("mode", "conversation")
+                    logger.info(f"Session found: level={language_level}, mode={session_mode}")
         except Exception as e:
             logger.error(f"Ошибка при получении сессии из session_manager: {e}")
     elif user_id in user_sessions and "language_level" in user_sessions[user_id]:
@@ -1678,7 +1687,7 @@ def handle_all_messages(message):
     if not session_exists:
         bot.send_message(
             message.chat.id,
-            "Please use /articles to start a conversation with me first."
+            "Please use /articles or /discussion to start a conversation with me first."
         )
         return
     
