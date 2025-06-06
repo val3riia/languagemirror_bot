@@ -69,7 +69,7 @@ class DeepSeekClient:
             completion = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
-                max_tokens=600,
+                max_tokens=800,
                 temperature=0.7,
                 extra_headers={
                     "HTTP-Referer": "https://language-mirror-bot.replit.app",
