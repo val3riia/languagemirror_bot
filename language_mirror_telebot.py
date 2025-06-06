@@ -115,29 +115,22 @@ def request_feedback(chat_id: int, session_type: str):
     
     markup = telebot.types.InlineKeyboardMarkup(row_width=5)
     
-    # Создаем кнопки с рейтингом от 1 до 5 звезд
+    # Создаем кнопки с рейтингом от 1 до 5
     rating_buttons = []
+    rating_labels = ["1 - Poor", "2 - Fair", "3 - Good", "4 - Very Good", "5 - Excellent"]
+    
     for rating in range(1, 6):
-        star_text = "⭐" * rating
         button = telebot.types.InlineKeyboardButton(
-            star_text,
+            rating_labels[rating-1],
             callback_data=f"feedback_{session_type}_{rating}"
         )
         rating_buttons.append(button)
     
     markup.add(*rating_buttons)
     
-    # Кнопка "Пропустить"
-    skip_button = telebot.types.InlineKeyboardButton(
-        "⏭️ Пропустить",
-        callback_data=f"feedback_{session_type}_skip"
-    )
-    markup.add(skip_button)
-    
     bot.send_message(
         chat_id,
-        f"📋 Как вам понравился {feature_text}?\n\n"
-        f"Ваша оценка поможет нам улучшить качество сервиса:",
+        f"How was your {session_type} experience? Please rate it:",
         reply_markup=markup
     )
 
@@ -826,8 +819,6 @@ def handle_discussion_level(call):
         try:
             session_manager.create_session(user_id, {
                 "language_level": level,
-                "messages": [],
-                "last_active": time.time(),
                 "mode": "discussion"
             })
             logger.info(f"Discussion session created for user: {user_id} with level: {level}")
@@ -992,23 +983,7 @@ def handle_feedback_callback(call):
             user_id = call.from_user.id
             chat_id = call.message.chat.id
             
-            if rating_str == "skip":
-                # Пользователь пропустил оценку
-                bot.answer_callback_query(call.id, "Спасибо за использование!")
-                bot.edit_message_text(
-                    "Оценка пропущена. Спасибо за использование!",
-                    chat_id=chat_id,
-                    message_id=call.message.message_id
-                )
-                
-                # Завершаем сессию
-                if session_manager:
-                    try:
-                        session_manager.end_session(user_id)
-                    except Exception as e:
-                        logger.debug(f"Ошибка при завершении сессии: {e}")
-                
-                return
+
             
             # Обрабатываем числовую оценку
             try:
@@ -1057,10 +1032,11 @@ def handle_feedback_callback(call):
                                 )
                     
                     # Отправляем подтверждение
-                    star_text = "⭐" * rating
-                    bot.answer_callback_query(call.id, f"Спасибо за оценку: {star_text}")
+                    rating_labels = ["Poor", "Fair", "Good", "Very Good", "Excellent"]
+                    rating_text = f"{rating} - {rating_labels[rating-1]}"
+                    bot.answer_callback_query(call.id, f"Thank you for rating: {rating_text}")
                     bot.edit_message_text(
-                        f"Спасибо за оценку: {star_text}\n\nВаша обратная связь поможет нам улучшить сервис!",
+                        f"Thank you for your rating: {rating_text}\n\nYour feedback helps us improve our service!",
                         chat_id=chat_id,
                         message_id=call.message.message_id
                     )
@@ -1685,10 +1661,12 @@ def handle_all_messages(message):
         # Проверка через менеджер сессий с Google Sheets
         try:
             session = session_manager.get_session(user_id)
+            logger.info(f"Retrieved session for user {user_id}: {session}")
             if session and "language_level" in session:
                 session_exists = True
                 language_level = session.get("language_level", "B1")
                 session_mode = session.get("mode", "conversation")
+                logger.info(f"Session found: level={language_level}, mode={session_mode}")
         except Exception as e:
             logger.error(f"Ошибка при получении сессии из session_manager: {e}")
     elif user_id in user_sessions and "language_level" in user_sessions[user_id]:
