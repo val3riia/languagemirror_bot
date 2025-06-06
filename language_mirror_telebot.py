@@ -1005,65 +1005,39 @@ def handle_feedback_callback(call):
             try:
                 rating = int(rating_str)
                 if 1 <= rating <= 5:
-                    # Сохраняем обратную связь
-                    if session_manager and session_manager.sheets_manager:
-                        # Получаем данные пользователя
-                        user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
-                        
-                        if user_data and isinstance(user_data, dict) and 'id' in user_data:
-                            # Записываем обратную связь
-                            session_manager.sheets_manager.add_feedback(
-                                user_id=int(user_data["id"]),
-                                rating=rating,
-                                comment=f"User rated {session_type} feature",
-                                activity_type=session_type
-                            )
-                            
-                            logger.info(f"Записана обратная связь: пользователь {user_id}, {session_type}, рейтинг {rating}")
-                        else:
-                            # Если пользователь не найден, создаем его
-                            try:
-                                user_info = bot.get_chat(user_id)
-                                username = user_info.username if hasattr(user_info, 'username') else ""
-                                first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
-                                last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
-                            except:
-                                username = ""
-                                first_name = ""
-                                last_name = ""
-                            
-                            new_user = session_manager.sheets_manager.create_user(
-                                telegram_id=user_id,
-                                username=username,
-                                first_name=first_name,
-                                last_name=last_name
-                            )
-                            
-                            if new_user and isinstance(new_user, dict) and 'id' in new_user:
-                                session_manager.sheets_manager.add_feedback(
-                                    user_id=int(new_user["id"]),
-                                    rating=rating,
-                                    comment=f"User rated {session_type} feature",
-                                    activity_type=session_type
-                                )
+                    # Feedback will be saved when user provides comment
                     
-                    # Отправляем подтверждение
+                    # Отправляем подтверждение и запрашиваем комментарий
                     rating_labels = ["Poor", "Fair", "Good", "Very Good", "Excellent"]
                     rating_text = f"{rating} - {rating_labels[rating-1]}"
                     bot.answer_callback_query(call.id, f"Thank you for rating: {rating_text}")
+                    
+                    # Сохраняем рейтинг для дальнейшего использования
+                    if session_manager:
+                        try:
+                            session_manager.update_session(user_id, {
+                                "feedback_rating": rating,
+                                "feedback_session_type": session_type,
+                                "waiting_for_comment": True
+                            })
+                        except Exception as e:
+                            logger.error(f"Ошибка при сохранении рейтинга: {e}")
+                    else:
+                        # Fallback для старой системы
+                        user_sessions[user_id] = {
+                            "feedback_rating": rating,
+                            "feedback_session_type": session_type,
+                            "waiting_for_comment": True,
+                            "last_active": time.time()
+                        }
+                    
                     bot.edit_message_text(
-                        f"Thank you for your rating: {rating_text}\n\nYour feedback helps us improve our service!",
+                        f"Thank you for your rating: {rating_text}!\n\n"
+                        f"Would you like to add any comments about your {session_type} experience? "
+                        f"Please reply with your thoughts or type /skip to finish.",
                         chat_id=chat_id,
                         message_id=call.message.message_id
                     )
-                    
-                    # Завершаем сессию
-                    if session_manager:
-                        try:
-                            session_manager.end_session(user_id)
-                            logger.info(f"Сессия {session_type} завершена для пользователя {user_id}")
-                        except Exception as e:
-                            logger.debug(f"Ошибка при завершении сессии: {e}")
                             
                 else:
                     bot.answer_callback_query(call.id, "Некорректная оценка")
@@ -1703,6 +1677,69 @@ def handle_all_messages(message):
             message.chat.id,
             "Please use /articles or /discussion to start a conversation with me first."
         )
+        return
+    
+    # Проверяем, ждет ли пользователь ввод комментария к обратной связи
+    waiting_for_comment = False
+    feedback_rating = None
+    feedback_session_type = None
+    
+    if session_manager is not None:
+        try:
+            session = session_manager.get_session(user_id)
+            if session and isinstance(session, dict):
+                session_data = session.get("data", session) if "data" in session else session
+                waiting_for_comment = session_data.get("waiting_for_comment", False)
+                feedback_rating = session_data.get("feedback_rating")
+                feedback_session_type = session_data.get("feedback_session_type")
+        except Exception as e:
+            logger.error(f"Ошибка при проверке обратной связи: {e}")
+    elif user_id in user_sessions:
+        waiting_for_comment = user_sessions[user_id].get("waiting_for_comment", False)
+        feedback_rating = user_sessions[user_id].get("feedback_rating")
+        feedback_session_type = user_sessions[user_id].get("feedback_session_type")
+    
+    # Если пользователь отправляет комментарий к обратной связи
+    if waiting_for_comment and feedback_rating and feedback_session_type:
+        comment = user_message.strip()
+        
+        if comment.lower() == "/skip":
+            comment = ""
+        
+        # Сохраняем обратную связь с комментарием
+        if session_manager and session_manager.sheets_manager:
+            try:
+                user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
+                if user_data and isinstance(user_data, dict) and 'id' in user_data:
+                    session_manager.sheets_manager.add_feedback(
+                        user_id=int(user_data["id"]),
+                        rating=feedback_rating,
+                        comment=comment if comment else "No comment provided",
+                        activity_type=feedback_session_type
+                    )
+                    logger.info(f"Записана обратная связь с комментарием: пользователь {user_id}, {feedback_session_type}, рейтинг {feedback_rating}")
+            except Exception as e:
+                logger.error(f"Ошибка при сохранении обратной связи с комментарием: {e}")
+        
+        # Завершаем процесс обратной связи
+        if session_manager is not None:
+            try:
+                session_manager.end_session(user_id)
+            except Exception as e:
+                logger.error(f"Ошибка при завершении сессии: {e}")
+        elif user_id in user_sessions:
+            del user_sessions[user_id]
+        
+        if comment:
+            bot.send_message(
+                message.chat.id,
+                f"Thank you for your feedback and comments! Your input helps us improve our service."
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                f"Thank you for your feedback! Your rating helps us improve our service."
+            )
         return
     
     # Проверяем подписку на канал для каждого сообщения в сессии

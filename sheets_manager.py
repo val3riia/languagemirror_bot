@@ -179,7 +179,7 @@ class SheetsManager:
             "users": ["id", "telegram_id", "username", "first_name", "last_name", "created_at"],
             "sessions": ["id", "user_id", "language_level", "created_at", "updated_at", "is_active", "data"],
             "messages": ["id", "session_id", "role", "content", "created_at"],
-            "feedback": ["id", "user_id", "session_id", "rating", "comment", "created_at"]
+            "feedback": ["id", "user_id", "session_id", "rating", "comment", "command", "created_at"]
         }
 
         existing_sheets = [ws.title for ws in self.spreadsheet.worksheets()]
