@@ -16,6 +16,7 @@ import requests
 import threading
 from datetime import datetime, date
 from openrouter_client import OpenRouterClient
+from deepseek_client import get_deepseek_client
 from sheets_excel_report import create_temp_excel_for_telegram
 
 # Настройка логирования
@@ -385,8 +386,8 @@ def handle_start(message):
     except Exception as e:
         logger.error(f"Error updating user info: {str(e)}")
 
-@bot.message_handler(commands=['articles', 'discussion'])
-def handle_discussion(message):
+@bot.message_handler(commands=['articles'])
+def handle_articles(message):
     """Обрабатывает команду /articles для поиска статей."""
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
@@ -595,6 +596,76 @@ def handle_language_level(call):
         chat_id=call.message.chat.id,
         message_id=call.message.message_id,
         text=f"Great! I'll adapt to your {level} level.\n\nNow tell me — what topic is on your mind today? What would you like to explore?"
+    )
+
+@bot.message_handler(commands=['discussion'])
+def handle_discussion(message):
+    """Обрабатывает команду /discussion для беседы с ИИ."""
+    # Создаем инлайн-клавиатуру для выбора уровня сложности
+    inline_markup = types.InlineKeyboardMarkup(row_width=2)
+    
+    # Добавляем кнопки уровней языка
+    for level, description in LANGUAGE_LEVELS.items():
+        button_text = f"{level} - {description.split(' - ')[1]}"
+        callback_data = f"discussion_level_{level}"
+        inline_markup.add(types.InlineKeyboardButton(button_text, callback_data=callback_data))
+    
+    # Отправляем сообщение с выбором уровня
+    bot.send_message(
+        message.chat.id,
+        "Let's have a conversation! 💬\n\n"
+        "I'll adapt my responses to your English level. Please select your level:",
+        reply_markup=inline_markup
+    )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('discussion_level_'))
+def handle_discussion_level(call):
+    """Обрабатывает выбор уровня владения языком для дискуссии."""
+    level = call.data.split('_')[-1]
+    user_id = call.from_user.id
+    
+    # Обновляем информацию о пользователе
+    try:
+        update_user_info(call.from_user)
+    except Exception as e:
+        logger.error(f"Error updating user info: {str(e)}")
+    
+    # Сохраняем информацию о сессии
+    if session_manager is not None:
+        try:
+            session_manager.create_session(user_id, {
+                "language_level": level,
+                "messages": [],
+                "last_active": time.time(),
+                "mode": "discussion"
+            })
+            logger.info(f"Discussion session created for user: {user_id} with level: {level}")
+        except Exception as e:
+            logger.error(f"Error creating discussion session: {str(e)}")
+            # Fallback к старой системе
+            user_sessions[user_id] = {
+                "language_level": level,
+                "messages": [],
+                "last_active": time.time(),
+                "mode": "discussion"
+            }
+    else:
+        # Используем старую систему хранения в памяти
+        user_sessions[user_id] = {
+            "language_level": level,
+            "messages": [],
+            "last_active": time.time(),
+            "mode": "discussion"
+        }
+    
+    # Приветственное сообщение для начала дискуссии
+    bot.edit_message_text(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        text=f"Perfect! I'll adapt to your {level} level.\n\n"
+             f"What's on your mind today? Share anything you'd like to discuss — "
+             f"your thoughts, experiences, or questions about life. I'm here to have a genuine conversation with you!\n\n"
+             f"Use /stop_discussion when you're ready to end our chat."
     )
 
 @bot.message_handler(commands=['stop_articles', 'stop_discussion'])
