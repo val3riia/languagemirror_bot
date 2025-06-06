@@ -146,21 +146,21 @@ def record_user_activity(user_id: int, activity_type: str):
     """
     if session_manager is not None and session_manager.sheets_manager:
         try:
+            # Получаем информацию о пользователе из Telegram
+            try:
+                user_info = bot.get_chat(user_id)
+                username = user_info.username if hasattr(user_info, 'username') else ""
+                first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
+                last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
+            except:
+                username = ""
+                first_name = ""
+                last_name = ""
+            
             # Получаем или создаем пользователя
             user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
             
             if not user_data:
-                # Получаем информацию о пользователе из Telegram
-                try:
-                    user_info = bot.get_chat(user_id)
-                    username = user_info.username if hasattr(user_info, 'username') else ""
-                    first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
-                    last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
-                except:
-                    username = ""
-                    first_name = ""
-                    last_name = ""
-                
                 # Создаем пользователя
                 user_data = session_manager.sheets_manager.create_user(
                     telegram_id=user_id,
