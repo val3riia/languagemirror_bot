@@ -1291,6 +1291,21 @@ def handle_feedback_comment(message):
         "Thank you for your comments! Your feedback helps me improve.\n\n"
         "Feel free to use /articles anytime you want to practice English again."
     )
+    
+    # Очищаем только флаг ожидания комментария, но сохраняем сессию
+    if session_manager is not None:
+        try:
+            session = session_manager.get_session(user_id)
+            if session:
+                session_manager.update_session(user_id, {
+                    "waiting_for_feedback_comment": False,
+                    "feedback_completed": True
+                })
+        except Exception as e:
+            logger.error(f"Ошибка при обновлении сессии: {e}")
+    elif user_id in user_sessions:
+        user_sessions[user_id]["waiting_for_feedback_comment"] = False
+        user_sessions[user_id]["feedback_completed"] = True
 
 def handle_discussion_feedback_comment(message):
     """Обрабатывает комментарии к обратной связи для дискуссий."""
@@ -1385,14 +1400,20 @@ def handle_discussion_feedback_comment(message):
         "Feel free to use /discussion anytime you want to have another conversation."
     )
     
-    # Очищаем данные обратной связи из временного хранилища
+    # Очищаем только флаг ожидания комментария, но сохраняем сессию
     if session_manager is not None:
         try:
-            session_manager.end_session(user_id)
+            session = session_manager.get_session(user_id)
+            if session:
+                session_manager.update_session(user_id, {
+                    "waiting_for_feedback_comment": False,
+                    "feedback_completed": True
+                })
         except Exception as e:
-            logger.error(f"Ошибка при завершении сессии после обратной связи: {e}")
+            logger.error(f"Ошибка при обновлении сессии: {e}")
     elif user_id in user_sessions:
-        del user_sessions[user_id]
+        user_sessions[user_id]["waiting_for_feedback_comment"] = False
+        user_sessions[user_id]["feedback_completed"] = True
 
 def find_articles_by_topic(topic: str, language_level: str) -> list:
     """
