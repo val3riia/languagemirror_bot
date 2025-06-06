@@ -524,7 +524,7 @@ class SheetSessionManager:
             self.in_memory_sessions = {}
             self.use_sheets = False
 
-    def add_feedback(self, user_id: int, rating: int, comment: Optional[str] = None) -> bool:
+    def add_feedback(self, user_id: int, rating: int, comment: Optional[str] = None, activity_type: str = "unknown") -> bool:
         """
         Добавляет обратную связь от пользователя.
         
@@ -552,7 +552,8 @@ class SheetSessionManager:
                     user_id=user["id"],
                     rating=rating,
                     comment=comment,
-                    session_id=session_id
+                    session_id=session_id,
+                    activity_type=activity_type
                 )
                 
                 return feedback is not None

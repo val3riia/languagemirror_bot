@@ -826,7 +826,8 @@ class SheetsManager:
         user_id: int, 
         rating: int, 
         comment: Optional[str] = None, 
-        session_id: Optional[int] = None
+        session_id: Optional[int] = None,
+        activity_type: str = "unknown"
     ) -> Optional[Dict[str, Any]]:
         """
         Добавляет обратную связь от пользователя.
@@ -864,6 +865,7 @@ class SheetsManager:
                 session_id or "",
                 rating,
                 comment or "",
+                activity_type,
                 now  # created_at
             ]
             
