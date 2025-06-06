@@ -259,12 +259,33 @@ class SheetsManager:
 
             worksheet = self.spreadsheet.worksheet("users")
             
+            # Проверяем кэш для уменьшения API вызовов
+            import time
+            current_time = time.time()
+            cache_key = f"user_{telegram_id}"
+            
+            if (cache_key in self._user_cache and 
+                current_time - self._user_cache[cache_key].get('timestamp', 0) < self._cache_timeout):
+                logger.debug(f"Используем кэшированные данные для пользователя {telegram_id}")
+                return self._user_cache[cache_key]['data']
+            
             # Находим строку с указанным telegram_id
-            cell = self._execute_with_retry(
-                worksheet.find, str(telegram_id), in_column=2
-            )
+            try:
+                cell = self._execute_with_retry(
+                    worksheet.find, str(telegram_id), in_column=2
+                )
+            except Exception as e:
+                if "Quota exceeded" in str(e):
+                    logger.warning(f"Quota exceeded при поиске пользователя {telegram_id}, возвращаем None")
+                    return None
+                raise e
             
             if not cell:
+                # Кэшируем отсутствие пользователя
+                self._user_cache[cache_key] = {
+                    'data': None,
+                    'timestamp': current_time
+                }
                 return None
                 
             row_data = worksheet.row_values(cell.row)
@@ -278,6 +299,12 @@ class SheetsManager:
                 user_data["id"] = int(user_data["id"])
             if "telegram_id" in user_data and user_data["telegram_id"]:
                 user_data["telegram_id"] = int(user_data["telegram_id"])
+            
+            # Кэшируем найденного пользователя
+            self._user_cache[cache_key] = {
+                'data': user_data,
+                'timestamp': current_time
+            }
                 
             return user_data
         except Exception as e:
