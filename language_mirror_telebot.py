@@ -827,7 +827,7 @@ def handle_discussion_feedback(call):
     # Регистрируем обработчик следующего сообщения
     bot.register_next_step_handler(call.message, handle_discussion_feedback_comment)
 
-@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not (call.data == "feedback_bonus" or call.data == "feedback_skip"))
+@bot.callback_query_handler(func=lambda call: call.data.startswith('feedback_') and not call.data == "feedback_skip")
 def handle_feedback(call):
     """Обрабатывает обратную связь пользователя."""
     user_id = call.from_user.id
@@ -903,8 +903,7 @@ def handle_feedback_comment(message):
     user_id = message.from_user.id
     comment = message.text
     
-    # Минимальное количество слов для получения бонуса
-    min_words_for_bonus = 3
+
     
     if comment.lower() == "/skip":
         bot.send_message(
@@ -983,23 +982,7 @@ def handle_feedback_comment(message):
                     )
                     logger.info(f"Обратная связь сохранена: пользователь {user_id}, оценка {rating_value}")
                     
-                    # Проверяем бонус за детальные комментарии
-                    words = comment.split()
-                    min_words_for_bonus = 3
-                    
-                    if len(words) >= min_words_for_bonus:
-                        # Отправляем уведомление о бонусном запросе
-                        bot.send_message(
-                            user_id,
-                            "🎁 Thank you for your detailed feedback! You've received a bonus article request. "
-                            "Use /articles to use it anytime today!"
-                        )
-                    else:
-                        bot.send_message(
-                            user_id,
-                            "Thank you for your feedback! For more detailed comments (at least 3 words) "
-                            "you can receive bonus article requests in the future."
-                        )
+
                 else:
                     logger.error(f"Не удалось получить данные пользователя для ID {user_id}")
             else:
