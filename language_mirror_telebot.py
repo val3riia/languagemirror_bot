@@ -267,11 +267,13 @@ def handle_start(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
     start_button = types.KeyboardButton('/start')
     articles_button = types.KeyboardButton('/articles')
+    discussion_button = types.KeyboardButton('/discussion')
     stop_button = types.KeyboardButton('/stop_articles')
     
     # Добавляем основные кнопки
     markup.add(start_button)
-    markup.add(articles_button, stop_button)
+    markup.add(articles_button, discussion_button)
+    markup.add(stop_button)
     
     # Проверяем, является ли пользователь администратором
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
@@ -336,12 +338,14 @@ def handle_start(message):
     welcome_text += "that genuinely interest you – your thoughts, experiences, and feelings.\n\n"
     welcome_text += "🔹 Bot Features:\n\n"
     welcome_text += "• Level Adaptation - I adjust to your language proficiency (from A1 to C2)\n"
-    welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n\n"
+    welcome_text += "• Article Recommendations - I can suggest reading materials on topics you're interested in\n"
+    welcome_text += "• AI Conversations - Have natural discussions about any topic that interests you\n\n"
     welcome_text += "🔹 Main Commands:\n\n"
     welcome_text += "• /start - show this welcome message\n"
     welcome_text += "• /articles - find English articles for reading practice (1 request per day)\n"
+    welcome_text += "• /discussion - have natural AI conversations about any topic\n"
     welcome_text += "• /stop_articles - end the current conversation\n\n"
-    welcome_text += "💡 Tip: Provide feedback after conversations to receive a bonus article request!\n\n"
+    welcome_text += "💡 Tip: Provide feedback after conversations to help improve the bot!\n\n"
     welcome_text += "Use the buttons below or type a command to get started!"
     
     # Отправляем сообщение
