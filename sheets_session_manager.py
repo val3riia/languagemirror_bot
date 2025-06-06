@@ -242,7 +242,17 @@ class SheetSessionManager:
                         pass  # Ошибка парсинга даты, игнорируем
                 
                 # Возвращаем данные сессии
-                return session.get("data", {})
+                # Если "data" содержит JSON данные, возвращаем их
+                if "data" in session and session["data"]:
+                    return session["data"]
+                else:
+                    # Возвращаем весь объект сессии как данные для совместимости
+                    return {
+                        "language_level": session.get("language_level"),
+                        "mode": session.get("mode", "conversation"),
+                        "created_at": session.get("created_at"),
+                        "updated_at": session.get("updated_at")
+                    }
             except Exception as e:
                 logger.error(f"Ошибка при получении сессии из Google Sheets: {e}")
                 # Fallback to in-memory
