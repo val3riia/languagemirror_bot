@@ -16,20 +16,33 @@ class DeepSeekClient:
     
     def __init__(self):
         """Инициализация клиента DeepSeek"""
-        self.api_key = os.environ.get("DEEPSEEK_API_KEY")
-        if not self.api_key:
-            logger.error("DEEPSEEK_API_KEY не найден в переменных окружения")
-            raise ValueError("DEEPSEEK_API_KEY не установлен")
+        # Проверяем наличие официального ключа DeepSeek
+        deepseek_key = os.environ.get("DEEPSEEK_API_KEY")
+        openrouter_key = os.environ.get("OPENROUTER_API_KEY")
         
-        self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=self.api_key,
-        )
-        
-        # Модель DeepSeek R1
-        self.model = "deepseek/deepseek-r1-0528:free"
-        
-        logger.info("DeepSeek клиент инициализирован успешно")
+        if deepseek_key:
+            # Используем официальный DeepSeek API
+            self.api_key = deepseek_key
+            self.client = OpenAI(
+                base_url="https://api.deepseek.com",
+                api_key=self.api_key,
+            )
+            self.model = "deepseek-r1"
+            self.provider = "deepseek"
+            logger.info("DeepSeek клиент инициализирован с официальным API")
+        elif openrouter_key:
+            # Используем OpenRouter как fallback
+            self.api_key = openrouter_key
+            self.client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=self.api_key,
+            )
+            self.model = "deepseek/deepseek-r1-0528:free"
+            self.provider = "openrouter"
+            logger.info("DeepSeek клиент инициализирован с OpenRouter API")
+        else:
+            logger.error("Ни DEEPSEEK_API_KEY, ни OPENROUTER_API_KEY не найдены")
+            raise ValueError("Необходим DEEPSEEK_API_KEY или OPENROUTER_API_KEY")
     
     def generate_discussion_response(
         self, 
