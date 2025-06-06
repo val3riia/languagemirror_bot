@@ -404,7 +404,7 @@ def handle_start(message):
     user_name = message.from_user.first_name
     
     # Записываем активность приветствия в базу данных
-    record_user_activity(user_id, "greeting")
+    record_user_activity(user_id, "start_command")
     
     # Создаем клавиатуру с командами
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -547,7 +547,7 @@ def handle_articles(message):
         return
     
     # Записываем активность использования функции articles
-    record_user_activity(user_id, "article")
+    record_user_activity(user_id, "articles_command")
     
     # Завершаем любую предыдущую сессию
     try:
@@ -796,7 +796,7 @@ def handle_discussion(message):
         return
     
     # Записываем активность использования функции discussion
-    record_user_activity(user_id, "discussion")
+    record_user_activity(user_id, "discussion_command")
     
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
