@@ -619,7 +619,7 @@ def handle_stop_discussion(message):
         bot.send_message(
             message.chat.id,
             "You don't have an active discussion session. "
-            "Use /discussion to start one."
+            "Use /articles to start one."
         )
         return
     
@@ -783,7 +783,7 @@ def handle_feedback_comment(message):
     if comment.lower() == "/skip":
         bot.send_message(
             message.chat.id,
-            "Thanks again for your feedback! Use /discussion anytime you want to practice English."
+            "Thanks again for your feedback! Use /articles anytime you want to practice English."
         )
         
         # Завершаем сессию
@@ -866,7 +866,7 @@ def handle_feedback_comment(message):
                         bot.send_message(
                             user_id,
                             "🎁 Thank you for your detailed feedback! You've received a bonus article request. "
-                            "Use /discussion to use it anytime today!"
+                            "Use /articles to use it anytime today!"
                         )
                     else:
                         bot.send_message(
@@ -891,7 +891,7 @@ def handle_feedback_comment(message):
     bot.send_message(
         message.chat.id,
         "Thank you for your comments! Your feedback helps me improve.\n\n"
-        "Feel free to use /discussion anytime you want to practice English again."
+        "Feel free to use /articles anytime you want to practice English again."
     )
     
     # Очищаем данные обратной связи из временного хранилища
@@ -1160,7 +1160,7 @@ def handle_all_messages(message):
     if not session_exists:
         bot.send_message(
             message.chat.id,
-            "Please use /discussion to start a conversation with me first."
+            "Please use /articles to start a conversation with me first."
         )
         return
     
@@ -1208,7 +1208,7 @@ def handle_all_messages(message):
         # Сообщение о завершении с запросом обратной связи
         bot.send_message(
             message.chat.id,
-            "Hope that gave you something to think about! Want to explore another topic? Just type /discussion.\n\nHow was that for you?",
+            "Hope that gave you something to think about! Want to explore another topic? Just type /articles.\n\nHow was that for you?",
             reply_markup=markup
         )
         
