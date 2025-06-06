@@ -98,7 +98,48 @@ def send_subscription_request(chat_id: int, feature_name: str = "feature"):
         f"After subscribing, click 'Check Subscription' to continue."
     )
     
-    bot.send_message(chat_id, message_text, reply_markup=markup)
+def request_feedback(chat_id: int, session_type: str):
+    """
+    Запрашивает обратную связь после завершения articles или discussion сессии.
+    
+    Args:
+        chat_id: ID чата
+        session_type: Тип сессии ("articles" или "discussion")
+    """
+    feature_messages = {
+        "articles": "поиск статей",
+        "discussion": "беседу с ИИ"
+    }
+    
+    feature_text = feature_messages.get(session_type, "функцию")
+    
+    markup = telebot.types.InlineKeyboardMarkup(row_width=5)
+    
+    # Создаем кнопки с рейтингом от 1 до 5 звезд
+    rating_buttons = []
+    for rating in range(1, 6):
+        star_text = "⭐" * rating
+        button = telebot.types.InlineKeyboardButton(
+            star_text,
+            callback_data=f"feedback_{session_type}_{rating}"
+        )
+        rating_buttons.append(button)
+    
+    markup.add(*rating_buttons)
+    
+    # Кнопка "Пропустить"
+    skip_button = telebot.types.InlineKeyboardButton(
+        "⏭️ Пропустить",
+        callback_data=f"feedback_{session_type}_skip"
+    )
+    markup.add(skip_button)
+    
+    bot.send_message(
+        chat_id,
+        f"📋 Как вам понравился {feature_text}?\n\n"
+        f"Ваша оценка поможет нам улучшить качество сервиса:",
+        reply_markup=markup
+    )
 
 def record_user_activity(user_id: int, activity_type: str):
     """
@@ -108,22 +149,40 @@ def record_user_activity(user_id: int, activity_type: str):
         user_id: ID пользователя в Telegram
         activity_type: Тип активности ("greeting", "article", "discussion")
     """
-    if session_manager is not None:
+    if session_manager is not None and session_manager.sheets_manager:
         try:
-            # Получаем информацию о пользователе из Telegram
-            user_info = bot.get_chat(user_id)
-            username = user_info.username if hasattr(user_info, 'username') else ""
-            first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
-            last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
+            # Получаем или создаем пользователя
+            user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
             
-            # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
-            session_manager.add_feedback(
-                user_id=user_id,
-                rating=0,  # 0 означает что это запись активности, а не обратная связь
-                comment=f"User accessed {activity_type} feature",
-                activity_type=activity_type
-            )
-            logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
+            if not user_data:
+                # Получаем информацию о пользователе из Telegram
+                try:
+                    user_info = bot.get_chat(user_id)
+                    username = user_info.username if hasattr(user_info, 'username') else ""
+                    first_name = user_info.first_name if hasattr(user_info, 'first_name') else ""
+                    last_name = user_info.last_name if hasattr(user_info, 'last_name') else ""
+                except:
+                    username = ""
+                    first_name = ""
+                    last_name = ""
+                
+                # Создаем пользователя
+                user_data = session_manager.sheets_manager.create_user(
+                    telegram_id=user_id,
+                    username=username,
+                    first_name=first_name,
+                    last_name=last_name
+                )
+            
+            if user_data and isinstance(user_data, dict) and 'id' in user_data:
+                # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
+                session_manager.sheets_manager.add_feedback(
+                    user_id=int(user_data["id"]),
+                    rating=0,  # 0 означает что это запись активности, а не обратная связь
+                    comment=f"User accessed {activity_type} feature",
+                    activity_type=activity_type
+                )
+                logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
         except Exception as e:
             logger.error(f"Ошибка при записи активности: {e}")
 
@@ -456,23 +515,23 @@ def handle_start(message):
         # Для обычных пользователей - кнопка не отображается
         logger.info(f"Кнопки администратора не отображаются для обычного пользователя {message.from_user.username or message.from_user.id}")
     
-    # Обновляем пользователя в Google Sheets или создаем нового (если настроено)
+    # Обновляем пользователя в Google Sheets только для записи базы пользователей
     try:
-        # Используем нашу реализацию хранения сессий в Google Sheets
-        if session_manager:
-            # Создаем или обновляем информацию о пользователе в сессии
-            user_data = {
-                "last_activity": datetime.utcnow().isoformat(),
-                "telegram_id": str(message.from_user.id),
-                "username": message.from_user.username or "",
-                "first_name": message.from_user.first_name or "",
-                "last_name": message.from_user.last_name or "",
-                "message_count": 0  # Инициализируем счетчик сообщений
-            }
+        if session_manager and session_manager.sheets_manager:
+            # Проверяем, существует ли пользователь
+            existing_user = session_manager.sheets_manager.get_user_by_telegram_id(message.from_user.id)
             
-            # Создаем/обновляем сессию с данными о пользователе
-            session_manager.create_session(message.from_user.id, user_data)
-            logger.info(f"Session created/updated for user: {message.from_user.id} ({message.from_user.username})")
+            if not existing_user:
+                # Создаем нового пользователя только если его нет
+                session_manager.sheets_manager.create_user(
+                    telegram_id=message.from_user.id,
+                    username=message.from_user.username or "",
+                    first_name=message.from_user.first_name or "",
+                    last_name=message.from_user.last_name or ""
+                )
+                logger.info(f"New user created: {message.from_user.id} ({message.from_user.username})")
+            else:
+                logger.info(f"Existing user found: {message.from_user.id} ({message.from_user.username})")
     except Exception as e:
         logger.error(f"Error updating user info: {str(e)}")
 
@@ -489,6 +548,28 @@ def handle_articles(message):
     # Записываем активность использования функции articles
     record_user_activity(user_id, "article")
     
+    # Завершаем любую предыдущую сессию
+    try:
+        if session_manager:
+            session_manager.end_session(user_id)
+            logger.info(f"Завершена предыдущая сессия для пользователя {user_id}")
+    except Exception as e:
+        logger.debug(f"Нет активной сессии для завершения: {e}")
+    
+    # Создаем новую сессию для articles
+    try:
+        if session_manager:
+            initial_data = {
+                "session_type": "articles",
+                "awaiting_topic": False,
+                "awaiting_level": True,
+                "last_activity": datetime.utcnow().isoformat()
+            }
+            session_manager.create_session(user_id, initial_data)
+            logger.info(f"Создана новая сессия articles для пользователя {user_id}")
+    except Exception as e:
+        logger.error(f"Ошибка при создании сессии: {e}")
+    
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
     
@@ -504,10 +585,8 @@ def handle_articles(message):
     inline_markup.add(beginner_button, elementary_button)
     inline_markup.add(intermediate_button, upper_button)
     inline_markup.add(advanced_button, proficient_button)
-    user_id = message.from_user.id
-    chat_id = message.chat.id
-    username = message.from_user.username if hasattr(message.from_user, 'username') else ""
     
+    username = message.from_user.username if hasattr(message.from_user, 'username') else ""
     logger.info(f"Обработка команды /articles от пользователя {username} (ID: {user_id})")
     
     # Проверяем, есть ли у пользователя активная сессия
