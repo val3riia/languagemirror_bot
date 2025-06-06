@@ -701,6 +701,16 @@ def handle_language_level(call):
 @bot.message_handler(commands=['discussion'])
 def handle_discussion(message):
     """Обрабатывает команду /discussion для беседы с ИИ."""
+    user_id = message.from_user.id
+    
+    # Проверяем подписку на канал
+    if not check_user_subscription(user_id):
+        send_subscription_request(message.chat.id, "discussion")
+        return
+    
+    # Записываем активность использования функции discussion
+    record_user_activity(user_id, "discussion")
+    
     # Создаем инлайн-клавиатуру для выбора уровня сложности
     inline_markup = types.InlineKeyboardMarkup(row_width=2)
     
@@ -872,6 +882,44 @@ def handle_feedback_bonus(call):
             chat_id=call.message.chat.id,
             message_id=call.message.message_id,
             text="Sorry, there was an error processing your request. Please try again later."
+        )
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith('check_subscription_'))
+def handle_subscription_check(call):
+    """Обрабатывает проверку подписки пользователя."""
+    user_id = call.from_user.id
+    feature_name = call.data.split('_')[2]  # check_subscription_articles -> articles
+    
+    # Проверяем подписку
+    if check_user_subscription(user_id):
+        # Подписка активна, разрешаем доступ к функции
+        bot.edit_message_text(
+            chat_id=call.message.chat.id,
+            message_id=call.message.message_id,
+            text="✅ Subscription confirmed! Welcome to our premium features!"
+        )
+        
+        # Автоматически вызываем нужную команду
+        if feature_name == "articles":
+            # Создаем fake message для вызова handle_articles
+            from types import SimpleNamespace
+            fake_message = SimpleNamespace()
+            fake_message.from_user = call.from_user
+            fake_message.chat = call.message.chat
+            handle_articles(fake_message)
+        elif feature_name == "discussion":
+            # Создаем fake message для вызова handle_discussion
+            from types import SimpleNamespace
+            fake_message = SimpleNamespace()
+            fake_message.from_user = call.from_user
+            fake_message.chat = call.message.chat
+            handle_discussion(fake_message)
+    else:
+        # Подписка не найдена
+        bot.answer_callback_query(
+            call.id,
+            "Please make sure you've subscribed to our channel and try again.",
+            show_alert=True
         )
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith('discussion_feedback_'))
@@ -1167,7 +1215,8 @@ def handle_discussion_feedback_comment(message):
                     feedback_result = session_manager.sheets_manager.add_feedback(
                         user_id=int(sheet_user["id"]),
                         rating=rating_value,
-                        comment=f"[Discussion] {comment}"  # Помечаем как обратную связь о дискуссии
+                        comment=f"[Discussion] {comment}",  # Помечаем как обратную связь о дискуссии
+                        activity_type="discussion"
                     )
                     logger.info(f"Обратная связь о дискуссии сохранена: пользователь {user_id}, оценка {rating_value}")
                 else:
