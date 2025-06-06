@@ -268,12 +268,13 @@ def handle_start(message):
     start_button = types.KeyboardButton('/start')
     articles_button = types.KeyboardButton('/articles')
     discussion_button = types.KeyboardButton('/discussion')
-    stop_button = types.KeyboardButton('/stop_articles')
+    stop_articles_button = types.KeyboardButton('/stop_articles')
+    stop_discussion_button = types.KeyboardButton('/stop_discussion')
     
     # Добавляем основные кнопки
     markup.add(start_button)
     markup.add(articles_button, discussion_button)
-    markup.add(stop_button)
+    markup.add(stop_articles_button, stop_discussion_button)
     
     # Проверяем, является ли пользователь администратором
     username = message.from_user.username if hasattr(message.from_user, 'username') else None
@@ -344,7 +345,8 @@ def handle_start(message):
     welcome_text += "• /start - show this welcome message\n"
     welcome_text += "• /articles - find English articles for reading practice (1 request per day)\n"
     welcome_text += "• /discussion - have natural AI conversations about any topic\n"
-    welcome_text += "• /stop_articles - end the current conversation\n\n"
+    welcome_text += "• /stop_articles - end the current article session\n"
+    welcome_text += "• /stop_discussion - end the current discussion\n\n"
     welcome_text += "💡 Tip: Provide feedback after conversations to help improve the bot!\n\n"
     welcome_text += "Use the buttons below or type a command to get started!"
     
@@ -1098,6 +1100,7 @@ def handle_discussion_feedback_comment(message):
         except Exception as e:
             logger.error(f"Ошибка при сохранении обратной связи о дискуссии: {str(e)}")
     
+    # Отправляем сообщение независимо от успеха сохранения
     bot.send_message(
         message.chat.id,
         "Thank you for your comments! Your feedback helps me improve.\n\n"
