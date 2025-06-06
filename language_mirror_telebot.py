@@ -1291,6 +1291,17 @@ def handle_feedback_comment(message):
         "Thank you for your comments! Your feedback helps me improve.\n\n"
         "Feel free to use /articles anytime you want to practice English again."
     )
+    
+    # Теперь завершаем сессию после полного получения обратной связи
+    if session_manager is not None:
+        try:
+            session_manager.end_session(user_id)
+            logger.info(f"Сессия завершена после получения комментария от пользователя {user_id}")
+        except Exception as e:
+            logger.error(f"Ошибка при завершении сессии: {e}")
+    elif user_id in user_sessions:
+        del user_sessions[user_id]
+        logger.info(f"Локальная сессия завершена для пользователя {user_id}")
 
 def handle_discussion_feedback_comment(message):
     """Обрабатывает комментарии к обратной связи для дискуссий."""
@@ -1816,22 +1827,26 @@ def handle_all_messages(message):
         # Запрашиваем обратную связь
         request_feedback(message.chat.id, "articles")
         
-        # Автоматически завершаем сессию после предоставления статей
-        logger.info(f"Автоматическое завершение сессии после предоставления статей для пользователя {user_id}")
+        # НЕ завершаем сессию - она завершится после получения комментария к обратной связи
+        logger.info(f"Статьи предоставлены пользователю {user_id}, ожидаем обратную связь")
         
-        # Заканчиваем сессию
+        # Обновляем сессию для ожидания обратной связи, но не завершаем её
         if session_manager is not None:
             try:
-                session_manager.end_session(user_id)
+                session_manager.update_session(user_id, {
+                    "articles_delivered": True,
+                    "waiting_for_feedback": True,
+                    "session_type": "articles"
+                })
             except Exception as e:
-                logger.error(f"Ошибка при завершении сессии в session_manager: {e}")
+                logger.error(f"Ошибка при обновлении сессии: {e}")
         else:
             if user_id in user_sessions:
-                # Сохраняем только информацию для получения обратной связи
-                user_sessions[user_id] = {
-                    "last_active": time.time(),
-                    "waiting_for_feedback": True
-                }
+                user_sessions[user_id].update({
+                    "articles_delivered": True,
+                    "waiting_for_feedback": True,
+                    "last_active": time.time()
+                })
         
         return
     
