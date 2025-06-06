@@ -172,9 +172,9 @@ def record_user_activity(user_id: int, activity_type: str):
             # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
             session_manager.sheets_manager.add_feedback(
                 telegram_id=user_id,
-                username=getattr(user, 'username', '') or '',
-                first_name=getattr(user, 'first_name', '') or '',
-                last_name=getattr(user, 'last_name', '') or '',
+                username=username,
+                first_name=first_name,
+                last_name=last_name,
                 rating=0,  # 0 означает что это запись активности, а не обратная связь
                 comment=f"User accessed {activity_type} feature",
                 activity_type=activity_type
@@ -1379,16 +1379,16 @@ def handle_discussion_feedback_comment(message):
                 }.get(feedback_type, 3)
                 
                 # Добавляем запись обратной связи в Google Sheets
-                if sheet_user and isinstance(sheet_user, dict) and 'id' in sheet_user:
-                    feedback_result = session_manager.sheets_manager.add_feedback(
-                        user_id=int(sheet_user["id"]),
-                        rating=rating_value,
-                        comment=f"[Discussion] {comment}",  # Помечаем как обратную связь о дискуссии
-                        activity_type="discussion"
-                    )
-                    logger.info(f"Обратная связь о дискуссии сохранена: пользователь {user_id}, оценка {rating_value}")
-                else:
-                    logger.error(f"Не удалось получить данные пользователя для ID {user_id}")
+                feedback_result = session_manager.sheets_manager.add_feedback(
+                    telegram_id=user_id,
+                    username=getattr(message.from_user, 'username', '') or '',
+                    first_name=getattr(message.from_user, 'first_name', '') or '',
+                    last_name=getattr(message.from_user, 'last_name', '') or '',
+                    rating=rating_value,
+                    comment=f"[Discussion] {comment}",  # Помечаем как обратную связь о дискуссии
+                    activity_type="discussion"
+                )
+                logger.info(f"Обратная связь о дискуссии сохранена: пользователь {user_id}, оценка {rating_value}")
             else:
                 logger.warning("Google Sheets недоступен для сохранения обратной связи")
         except Exception as e:
@@ -1737,17 +1737,17 @@ def handle_all_messages(message):
                         last_name=last_name
                     )
                 
-                if user_data and isinstance(user_data, dict) and 'id' in user_data:
-                    # Добавляем обратную связь с правильными колонками
-                    session_manager.sheets_manager.add_feedback(
-                        user_id=int(user_data["id"]),
-                        rating=feedback_rating,
-                        comment=comment if comment else "No comment provided",
-                        activity_type=feedback_session_type  # Это колонка "command"
-                    )
-                    logger.info(f"Записана обратная связь с комментарием: пользователь {user_id}, команда {feedback_session_type}, рейтинг {feedback_rating}, комментарий: {comment}")
-                else:
-                    logger.error(f"Не удалось получить или создать пользователя для telegram_id {user_id}")
+                # Добавляем обратную связь с правильными колонками
+                session_manager.sheets_manager.add_feedback(
+                    telegram_id=user_id,
+                    username=getattr(message.from_user, 'username', '') or '',
+                    first_name=getattr(message.from_user, 'first_name', '') or '',
+                    last_name=getattr(message.from_user, 'last_name', '') or '',
+                    rating=feedback_rating,
+                    comment=comment if comment else "No comment provided",
+                    activity_type=feedback_session_type  # Это колонка "command"
+                )
+                logger.info(f"Записана обратная связь с комментарием: пользователь {user_id}, команда {feedback_session_type}, рейтинг {feedback_rating}, комментарий: {comment}")
             except Exception as e:
                 logger.error(f"Ошибка при сохранении обратной связи с комментарием: {e}")
         
