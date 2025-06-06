@@ -136,55 +136,7 @@ def request_feedback(chat_id: int, session_type: str):
         reply_markup=markup
     )
 
-def record_user_activity(user_id: int, activity_type: str):
-    """
-    Записывает активность пользователя в базу данных.
-    
-    Args:
-        user_id: ID пользователя в Telegram
-        activity_type: Тип активности ("greeting", "article", "discussion")
-    """
-    if session_manager is not None and session_manager.sheets_manager:
-        try:
-            # Получаем информацию о пользователе из Telegram
-            try:
-                user_info = bot.get_chat(user_id)
-                username = getattr(user_info, 'username', '') or ''
-                first_name = getattr(user_info, 'first_name', '') or ''
-                last_name = getattr(user_info, 'last_name', '') or ''
-                # Добавляем @ к username если он существует
-                if username and not username.startswith('@'):
-                    username = f"@{username}"
-            except:
-                username = ""
-                first_name = ""
-                last_name = ""
-            
-            # Получаем или создаем пользователя
-            user_data = session_manager.sheets_manager.get_user_by_telegram_id(user_id)
-            
-            if not user_data:
-                # Создаем пользователя
-                user_data = session_manager.sheets_manager.create_user(
-                    telegram_id=user_id,
-                    username=username,
-                    first_name=first_name,
-                    last_name=last_name
-                )
-            
-            # Записываем активность как обратную связь с рейтингом 0 (индикатор активности)
-            session_manager.sheets_manager.add_feedback(
-                telegram_id=user_id,
-                username=username or "",
-                first_name=first_name or "",
-                last_name=last_name or "",
-                rating=0,  # 0 означает что это запись активности, а не обратная связь
-                comment="",  # Оставляем пустым для записей активности
-                activity_type=activity_type
-            )
-            logger.info(f"Записана активность {activity_type} для пользователя {user_id}")
-        except Exception as e:
-            logger.error(f"Ошибка при записи активности: {e}")
+
 
 # Список администраторов (имена пользователей и ID)
 ADMIN_USERNAME = os.environ.get("ADMIN_USERNAME", "")
@@ -403,8 +355,7 @@ def handle_start(message):
     user_id = message.from_user.id
     user_name = message.from_user.first_name
     
-    # Записываем активность приветствия в базу данных
-    record_user_activity(user_id, "start_command")
+
     
     # Создаем клавиатуру с командами
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True, row_width=2)
@@ -562,8 +513,7 @@ def handle_articles(message):
         send_subscription_request(message.chat.id, "articles")
         return
     
-    # Записываем активность использования функции articles
-    record_user_activity(user_id, "articles_command")
+
     
     # Завершаем любую предыдущую сессию
     try:
