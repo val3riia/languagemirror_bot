@@ -536,10 +536,10 @@ def handle_articles(message):
     user_id = message.from_user.id
     logger.info(f"Processing /articles command from user {user_id}")
     
-    # Проверяем подписку на канал (временно отключено для отладки)
-    # if not check_user_subscription(user_id):
-    #     send_subscription_request(message.chat.id, "articles")
-    #     return
+    # Проверяем подписку на канал
+    if not check_user_subscription(user_id):
+        send_subscription_request(message.chat.id, "articles")
+        return
     
     # Записываем активность использования функции articles
     record_user_activity(user_id, "article")
@@ -734,6 +734,12 @@ def handle_language_level(call):
     level = call.data.split('_')[1]
     user_id = call.from_user.id
     
+    # Проверяем подписку на канал перед обработкой выбора уровня
+    if not check_user_subscription(user_id):
+        bot.answer_callback_query(call.id, "⛔ You must be subscribed to @behindtheword to use this feature!", show_alert=True)
+        send_subscription_request(call.message.chat.id, "language level selection")
+        return
+    
     # Получаем дополнительную информацию о пользователе
     user_info = {
         "language_level": level,
@@ -779,10 +785,10 @@ def handle_discussion(message):
     user_id = message.from_user.id
     logger.info(f"Processing /discussion command from user {user_id}")
     
-    # Проверяем подписку на канал (временно отключено для отладки)
-    # if not check_user_subscription(user_id):
-    #     send_subscription_request(message.chat.id, "discussion")
-    #     return
+    # Проверяем подписку на канал
+    if not check_user_subscription(user_id):
+        send_subscription_request(message.chat.id, "discussion")
+        return
     
     # Записываем активность использования функции discussion
     record_user_activity(user_id, "discussion")
@@ -809,6 +815,12 @@ def handle_discussion_level(call):
     """Обрабатывает выбор уровня владения языком для дискуссии."""
     level = call.data.split('_')[-1]
     user_id = call.from_user.id
+    
+    # Проверяем подписку на канал перед обработкой выбора уровня
+    if not check_user_subscription(user_id):
+        bot.answer_callback_query(call.id, "⛔ You must be subscribed to @behindtheword to use this feature!", show_alert=True)
+        send_subscription_request(call.message.chat.id, "discussion level selection")
+        return
     
     # Обновляем информацию о пользователе (если необходимо)
     try:
@@ -1691,6 +1703,21 @@ def handle_all_messages(message):
             message.chat.id,
             "Please use /articles or /discussion to start a conversation with me first."
         )
+        return
+    
+    # Проверяем подписку на канал для каждого сообщения в сессии
+    if not check_user_subscription(user_id):
+        # Завершаем активную сессию, если пользователь отписался
+        if session_manager is not None:
+            try:
+                session_manager.end_session(user_id)
+                logger.info(f"Session ended for unsubscribed user: {user_id}")
+            except Exception as e:
+                logger.error(f"Ошибка при завершении сессии: {e}")
+        elif user_id in user_sessions:
+            del user_sessions[user_id]
+            
+        send_subscription_request(message.chat.id, "premium features")
         return
     
     # Имитируем "печатание" бота
